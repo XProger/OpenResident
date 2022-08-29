@@ -4,16 +4,7 @@
 #include <windows.h>
 #include "common.h"
 
-#define PLAYER_SPEED_WALK           80
-#define PLAYER_SPEED_RUN            200
-#define PLAYER_SPEED_BACK           65
-#define PLAYER_SPEED_HURT_WALK      65
-#define PLAYER_SPEED_HURT_RUN       190
-#define PLAYER_SPEED_HURT_BACK      45
-#define PLAYER_SPEED_BADLY_WALK     30
-#define PLAYER_SPEED_BADLY_RUN      80
-#define PLAYER_SPEED_BADLY_BACK     25
-#define PLAYER_TURN_ANGLE           1024
+#define PLAYER_TURN_ANGLE   1280
 
 enum ModelID
 {
@@ -89,10 +80,11 @@ struct Player
     Model model;
     Model weapon;
 
-    int32 frameCounter;
-    int32 frameIndex;
     int32 animFrame;
+    int32 frameIndex;
     int32 health;
+
+    vec3s baseSpeed;
 
     void init(ModelID id)
     {
@@ -106,7 +98,6 @@ struct Player
         animId = ANIM_IDLE;
         stateId = STATE_IDLE;
         animFrame = 0;
-        frameCounter = 0;
         frameIndex = 0;
         health = 100;
 
@@ -153,7 +144,6 @@ struct Player
             return;
 
         animId = id;
-        frameCounter = 0;
         animFrame = 0;
     }
 
@@ -214,37 +204,59 @@ struct Player
                 break;
         }
 
+        const Animation::Clip* clip;
+        const Skeleton::Frame* frame;
+
         if (animId >= ANIM_WALK)
         {
-            if (!frameCounter)
-            {
-                const Animation::Clip& clip = weapon.animation.clips[animId - ANIM_WALK];
+            clip = weapon.animation.clips + animId - ANIM_WALK;
 
-                frameIndex = weapon.animation.getFrameIndex(clip.start + (animFrame % clip.count));
+            frameIndex = weapon.animation.getFrameIndex(clip->start + (animFrame % clip->count));
+            frame = weapon.skeleton.frames + frameIndex;
+        }
+        else
+        {
+            clip = model.animation.clips + animId;
 
-                int32 sx = weapon.skeleton.frames[frameIndex].speed.x;
+            frameIndex = model.animation.getFrameIndex(clip->start + (animFrame % clip->count));
+            frame = model.skeleton.frames + frameIndex;
+        }
 
-                char buf[256];
-                sprintf(buf, "%d %d\n", sx & 0x3F, sx >> 6);
-                OutputDebugString(buf);
+        if (animId == ANIM_DEATH && animFrame > clip->count - 2)
+        {
+            animFrame = clip->count - 2;
+        }
 
-                frameCounter = 0;// (sx < 0 ? -sx : sx) & 0x3F;
-                animFrame++;
-            }
-            else
-            {
-                frameCounter--;
-            }
+        if (animFrame >= clip->count)
+        {
+            animFrame = 0;
+        }
 
-            //speed = 0;
-            if (speed)
-            {
-                int32 s, c;
-                sincos(angle, s, c);
+        if (animFrame == 0)
+        {
+            baseSpeed.x = baseSpeed.y = baseSpeed.z = 0;
+        }
 
-                pos.x += c * speed >> 14;
-                pos.z += s * speed >> 14;
-            }
+        if (stateId == STATE_IDLE || stateId == STATE_AIM || stateId == STATE_DEATH)
+        {
+            speed = 0;
+        }
+        else
+        {
+            speed = frame->speed.x - baseSpeed.x;
+        }
+
+        baseSpeed = frame->speed;
+
+        animFrame++;
+
+        if (speed)
+        {
+            int32 s, c;
+            sincos(angle, s, c);
+
+            pos.x += c * speed >> 14;
+            pos.z += s * speed >> 14;
         }
     }
 
@@ -297,7 +309,6 @@ struct Player
                 setAnim(ANIM_IDLE);
             }
         }
-        speed = 0;
     }
 
     void update_WALK()
@@ -316,7 +327,6 @@ struct Player
         {
             setAnim(ANIM_WALK);
         }
-        speed = PLAYER_SPEED_WALK;
     }
 
     void update_RUN()
@@ -335,7 +345,6 @@ struct Player
         {
             setAnim(ANIM_RUN);
         }
-        speed = PLAYER_SPEED_RUN;
     }
 
     void update_BACK()
@@ -350,7 +359,6 @@ struct Player
         {
             setAnim(ANIM_BACK);
         }
-        speed = -PLAYER_SPEED_BACK;
     }
 
     void update_AIM()
@@ -376,7 +384,7 @@ struct Player
             }
             else
             {
-                setAnim(ANIM_AIM_DOWN); // TODO aim down
+                setAnim(ANIM_AIM_DOWN);
             }
         }
         else
@@ -390,13 +398,11 @@ struct Player
                 setAnim(ANIM_AIM);
             }
         }
-        speed = 0;
     }
 
     void update_DEATH()
     {
         setAnim(ANIM_DEATH);
-        speed = 0;
     }
 
     void render()
