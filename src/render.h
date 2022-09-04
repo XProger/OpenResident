@@ -14,10 +14,11 @@ struct Texture
     int32 count;
 
     void load(Stream* stream);
+    void init(uint8* data32);
     void free();
 };
 
-#define MAX_RANGES  20
+#define MAX_RANGES  32
 
 struct MeshRange
 {
@@ -25,8 +26,8 @@ struct MeshRange
     uint16 iCount;
 };
 
-#define MAX_ANIMATION_FRAMES    512
-#define MAX_ANIMATION_CLIPS     20
+#define MAX_ANIMATION_FRAMES    1536
+#define MAX_ANIMATION_CLIPS     32
 
 #define ANIM_FRAME_INDEX(x)     ((x) & BITS_MASK(12))
 #define ANIM_FRAME_FLAGS(x)     (((x) >> 12) & BITS_MASK(20))
@@ -71,9 +72,8 @@ struct Skeleton
     struct Frame
     {
         vec3s pos;
-        vec3s speed;
-        uint8 angles[80 - 12];
-
+        vec3s offset;
+        uint8 angles[132 - 12];
     };
 
     Offset offsets[MAX_RANGES];
@@ -108,5 +108,6 @@ void renderFree();
 void renderResize(int32 width, int32 height);
 void renderSwap();
 void renderClear();
+void renderBackground(const Texture* texture);
 
 #endif

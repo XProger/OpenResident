@@ -365,7 +365,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (msg)
     {
         case WM_ACTIVATE:
-            isActive = (wParam == WA_ACTIVE);
+            isActive = (wParam != WA_INACTIVE);
             if (!isActive)
             {
                 inputReset();
@@ -444,7 +444,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-    MSG msg;
     RECT r = { 0, 0, WND_WIDTH, WND_HEIGHT };
 
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
@@ -466,6 +465,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     gameInit();
 
+    MSG msg;
     do {
         if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);

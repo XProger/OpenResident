@@ -7,7 +7,8 @@
 
 #include "render.h"
 
-#define MAX_CLUTS   3
+#define MAX_UI_PRIMS    128
+#define MAX_CLUTS       4
 
 #define PI          3.14159265358979323846f
 #define DEG2RAD     (PI / 180.0f)
@@ -297,6 +298,7 @@ struct Shader
 };
 
 Shader shaderModel;
+Shader shader2D;
 
 const char* GLSL_HEADER_VERT_GL3 = 
     "#version 150\n"
@@ -338,6 +340,32 @@ const char* sh_model =
 
         "void main() {\n"
             "fragColor = texture2D(sDiffuse, vTexCoord) * vColor;\n"
+            "if (fragColor.a < 0.5) discard;\n"
+        "}\n"
+
+    "#endif\n";
+
+const char* sh_2D =
+    "varying vec2 vTexCoord;\n"
+
+    "#ifdef VERTEX\n"
+        "uniform mat4 uProjMatrix;\n"
+        "uniform vec4 uTexParam;\n"
+
+        "attribute vec2 aCoord;\n"
+        "attribute vec4 aTexCoord;\n"
+
+        "void main() {\n"
+            "vTexCoord.xy = aTexCoord.xy * uTexParam.xy;\n"
+            "gl_Position = uProjMatrix * vec4(aCoord, 0.0, 1.0);\n"
+        "}\n"
+
+    "#else\n"
+
+        "uniform sampler2D sDiffuse;\n"
+
+        "void main() {\n"
+            "fragColor = texture2D(sDiffuse, vTexCoord);\n"
         "}\n"
 
     "#endif\n";
@@ -486,7 +514,7 @@ void Texture::load(Stream* stream)
                 *dst++ = (value & 31) << 3;
                 *dst++ = ((value >> 5) & 31) << 3;
                 *dst++ = ((value >> 10) & 31) << 3;
-                *dst++ = 255;
+                *dst++ = index ? 255 : 0;
             }
             break;
         }
@@ -521,22 +549,13 @@ void Texture::load(Stream* stream)
         default: ASSERT(false);
     }
 
-    res = new GLuint();
+    init(data32);
 
-    glGenTextures(1, (GLuint*)res);
-    glBindTexture(GL_TEXTURE_2D, *(GLuint*)res);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data32);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-#if 1
+#if 0
 #ifdef _DEBUG
     char buf[32];
     sprintf(buf, "tex_%d.bmp", *(GLuint*)res);
-    dumpBitmap(buf, width, height, (uint8*)data32);
+    dumpBitmap(buf, width, height, data32);
 #endif
 #endif
 
@@ -544,17 +563,39 @@ void Texture::load(Stream* stream)
     delete[] data;
 }
 
+void Texture::init(uint8* data32)
+{
+    if (!res)
+    {
+        res = new GLuint();
+
+        glGenTextures(1, (GLuint*)res);
+        glBindTexture(GL_TEXTURE_2D, *(GLuint*)res);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data32);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    else
+    {
+        glBindTexture(GL_TEXTURE_2D, *(GLuint*)res);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data32);
+    }
+}
+
 void Texture::free()
 {
     glDeleteTextures(1, (GLuint*)res);
+    delete res;
+    res = NULL;
 }
 
 
 // animation ==============================================
 void Animation::load(Stream* stream)
 {
-    totalFrames = 0;
-
     clips[0].start = 0;
     clips[0].count = stream->u16();
 
@@ -564,6 +605,7 @@ void Animation::load(Stream* stream)
 
     ASSERT(clipsCount <= MAX_ANIMATION_CLIPS);
 
+    totalFrames = clips[0].count;
     for (uint32 i = 1; i < clipsCount; i++)
     {
         clips[i].count = stream->u16();
@@ -575,7 +617,6 @@ void Animation::load(Stream* stream)
     for (uint32 i = 0; i < totalFrames; i++)
     {
         framesInfo[i] = stream->u32();
-        ASSERT(ANIM_FRAME_INDEX(framesInfo[i]) <= i);
     }
 }
 
@@ -609,7 +650,6 @@ void Skeleton::load(Stream* stream, const Animation* anim)
     count = stream->u16();
     uint32 size = stream->u16();
 
-    ASSERT(size == 80);
     ASSERT(size <= sizeof(Frame));
 
     if (offsetLinks > 0)
@@ -669,10 +709,10 @@ void Skeleton::load(Stream* stream, const Animation* anim)
         f->pos.x = stream->s16();
         f->pos.y = stream->s16();
         f->pos.z = stream->s16();
-        f->speed.x = stream->s16();
-        f->speed.y = stream->s16();
-        f->speed.z = stream->s16();
-        stream->read(f->angles, sizeof(f->angles));
+        f->offset.x = stream->s16();
+        f->offset.y = stream->s16();
+        f->offset.z = stream->s16();
+        stream->read(f->angles, size - sizeof(vec3s) * 2);
     }
 }
 
@@ -747,6 +787,12 @@ struct Vertex
     uint8 u, v, page, zero;
 };
 
+struct VertexUI
+{
+    vec2s coord;
+    vec2s uv;
+};
+
 Index addVertex(int32 idx, const Prim* prim, const Coord* coords, const Coord* normals, const Tile* tile, Vertex* vertices, int32& vCount)
 {
     Vertex* v = vertices + vCount;
@@ -792,22 +838,52 @@ void Model::load(Stream* stream)
 
     uint32 offset = stream->u32();
     uint32 numOffsets = stream->u32();
-    ASSERT(numOffsets == 4);
+    ASSERT((numOffsets == 4) || (numOffsets == 8));
 
     stream->setPos(offset);
-    uint32 offsetAnimation = stream->u32();
-    uint32 offsetSkeleton = stream->u32();
-    uint32 offsetMesh = stream->u32();
-    uint32 offsetTexture = stream->u32();
+    uint32 offsetAnimation0 = 0;
+    uint32 offsetSkeleton0 = 0;
+    uint32 offsetAnimation1 = 0;
+    uint32 offsetSkeleton1 = 0;
+    uint32 offsetAnimation2 = 0;
+    uint32 offsetSkeleton2 = 0;
+    uint32 offsetMesh = 0;
+    uint32 offsetTexture = 0;
 
-    stream->setPos(offsetAnimation);
+    if (numOffsets == 4)
+    {
+        offsetAnimation0 = stream->u32();
+        offsetSkeleton0 = stream->u32();
+        offsetMesh = stream->u32();
+        offsetTexture = stream->u32();
+    }
+    else if (numOffsets == 8)
+    {
+        stream->skip(4);
+        offsetAnimation0 = stream->u32();
+        offsetSkeleton0 = stream->u32();
+        offsetAnimation1 = stream->u32();
+        offsetSkeleton1 = stream->u32();
+        offsetAnimation2 = stream->u32();
+        offsetSkeleton2 = stream->u32();
+        offsetMesh = stream->u32();
+    }
+    else
+    {
+        ASSERT(0);
+    }
+
+    stream->setPos(offsetAnimation0);
     animation.load(stream);
 
-    stream->setPos(offsetSkeleton);
+    stream->setPos(offsetSkeleton0);
     skeleton.load(stream, &animation);
 
-    stream->setPos(offsetTexture);
-    texture.load(stream);
+    if (offsetTexture)
+    {
+        stream->setPos(offsetTexture);
+        texture.load(stream);
+    }
 
     stream->setPos(offsetMesh);
 
@@ -1075,6 +1151,9 @@ void* GetProc(const char *name) {
 
 #define GetProcOGL(x) x=(decltype(x))GetProc(#x)
 
+GLuint uiVAO;
+GLuint uiVBO[2];
+
 void renderInit()
 {
     PIXELFORMATDESCRIPTOR pfd;
@@ -1188,6 +1267,7 @@ void renderInit()
     GetProcOGL(glBindVertexArray);
 
     compileShader(&shaderModel, sh_model);
+    compileShader(&shader2D, sh_2D);
 
     glClearColor(0.2f + dbg_clear, 0.2f, 0.2f, 1.0f);
     glEnable(GL_CULL_FACE);
@@ -1196,6 +1276,48 @@ void renderInit()
     glEnable(GL_DEPTH_TEST);
 
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+    // init dynamic UI buffer
+    glGenVertexArrays(1, &uiVAO);
+    glGenBuffers(2, uiVBO);
+
+    glBindVertexArray(uiVAO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, uiVBO[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, uiVBO[1]);
+
+    Index* indicesUI = new Index[MAX_UI_PRIMS * 6];
+    for (int32 i = 0; i < MAX_UI_PRIMS; i++)
+    {
+        indicesUI[i * 6 + 0] = i * 4 + 0;
+        indicesUI[i * 6 + 1] = i * 4 + 1;
+        indicesUI[i * 6 + 2] = i * 4 + 2;
+        indicesUI[i * 6 + 3] = i * 4 + 0;
+        indicesUI[i * 6 + 4] = i * 4 + 2;
+        indicesUI[i * 6 + 5] = i * 4 + 3;
+    }
+
+    const VertexUI verticesBG[] = {
+        { {   0,   0 }, {   0,   0} },
+        { { 320,   0 }, { 320,   0} },
+        { { 320, 240 }, { 320, 240} },
+        { {   0, 240 }, {   0, 240} },
+    };
+
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, MAX_UI_PRIMS * sizeof(Index), indicesUI, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, MAX_UI_PRIMS * 4 * sizeof(VertexUI), NULL, GL_STATIC_DRAW);
+    
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(VertexUI) * 4, verticesBG); // set persistent vertices for background draw
+
+    glEnableVertexAttribArray(aCoord);
+    glEnableVertexAttribArray(aTexCoord);
+
+    VertexUI* v = NULL;
+    glVertexAttribPointer(aCoord, 2, GL_SHORT, GL_FALSE, sizeof(*v), &v->coord);
+    glVertexAttribPointer(aTexCoord, 4, GL_SHORT, GL_FALSE, sizeof(*v), &v->uv);
+
+    glBindVertexArray(0);
+
+    delete[] indicesUI;
 }
 
 void renderFree()
@@ -1220,4 +1342,26 @@ void renderSwap()
 void renderClear()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+}
+
+void renderBackground(const Texture* texture)
+{
+    glDisable(GL_DEPTH_TEST);
+
+    Shader* pShader = &shader2D;
+
+    glBindTexture(GL_TEXTURE_2D, *(GLuint*)texture->res);
+    glBindVertexArray(uiVAO);
+    glUseProgram(pShader->id);
+
+    float texParam[4] = { 1.0f / texture->width, 1.0f / texture->height, 1.0f / texture->count, 0.0f };
+    pShader->setVector(uTexParam, texParam);
+
+    mat4 mProj;
+    mProj.ortho(0, 320, 240, 0, 0, 1);
+    pShader->setMatrix(uProjMatrix, mProj);
+
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
+
+    glEnable(GL_DEPTH_TEST);
 }

@@ -15,5 +15,7 @@
     <ClInclude Include="..\..\types.h" />
     <ClInclude Include="..\..\enemy.h" />
     <ClInclude Include="..\..\tables.h" />
+    <ClInclude Include="..\..\lzss.h" />
+    <ClInclude Include="..\..\mdec.h" />
   </ItemGroup>
 </Project>

@@ -1,12 +1,22 @@
 #ifndef H_TYPES
 #define H_TYPES
 
+#define USE_ADT
+#define USE_BSS
+
+#include <memory.h>
+
 typedef signed char         int8;
 typedef unsigned char       uint8;
 typedef short int           int16;
 typedef unsigned short int  uint16;
 typedef int                 int32;
 typedef unsigned int        uint32;
+
+struct vec2s
+{
+    int16 x, y;
+};
 
 struct vec3s
 {

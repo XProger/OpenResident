@@ -58,7 +58,6 @@ struct FileStream : Stream
     FileStream(const char* fileName)
     {
         f = fopen(fileName, "rb");
-        ASSERT(f != NULL);
     }
 
     ~FileStream()

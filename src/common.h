@@ -1,8 +1,6 @@
 #ifndef H_COMMON
 #define H_COMMON
 
-#include <memory.h>
-
 #include "types.h"
 
 const char* HEX = "0123456789ABCDEF";
@@ -21,9 +19,8 @@ extern int32 gLastFrameIndex;
 #include "stream.h"
 #include "input.h"
 #include "render.h"
+#include "room.h"
 #include "player.h"
 #include "enemy.h"
-
-
 
 #endif

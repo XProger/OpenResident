@@ -26,6 +26,8 @@
     <ClInclude Include="..\..\enemy.h" />
     <ClInclude Include="..\..\game.h" />
     <ClInclude Include="..\..\input.h" />
+    <ClInclude Include="..\..\lzss.h" />
+    <ClInclude Include="..\..\mdec.h" />
     <ClInclude Include="..\..\player.h" />
     <ClInclude Include="..\..\render.h" />
     <ClInclude Include="..\..\room.h" />

@@ -60,6 +60,7 @@ enum StateID
     STATE_WALK,
     STATE_RUN,
     STATE_BACK,
+    STATE_TURN,
     STATE_AIM,
     STATE_DEATH
 };
@@ -74,7 +75,6 @@ struct Player
     StateID stateId;
 
     vec3i pos;
-    int16 speed;
     int16 angle;
 
     Model model;
@@ -84,12 +84,11 @@ struct Player
     int32 frameIndex;
     int32 health;
 
-    vec3s baseSpeed;
+    vec3s offset;
 
     void init(ModelID id)
     {
         pos.x = pos.y = pos.z = 0;
-        speed = 0;
         angle = 0;
 
         modelId = id;
@@ -177,6 +176,10 @@ struct Player
         {
             setState(STATE_BACK);
         }
+        else if (((gPad & IN_LEFT) != 0) ^ ((gPad & IN_RIGHT) != 0))
+        {
+            setState(STATE_TURN);
+        }
         else
         {
             setState(STATE_IDLE);
@@ -195,6 +198,9 @@ struct Player
                 break;
             case STATE_BACK:
                 update_BACK();
+                break;
+            case STATE_TURN:
+                update_TURN();
                 break;
             case STATE_AIM:
                 update_AIM();
@@ -222,47 +228,56 @@ struct Player
             frame = model.skeleton.frames + frameIndex;
         }
 
-        if (animId == ANIM_DEATH && animFrame > clip->count - 2)
-        {
-            animFrame = clip->count - 2;
-        }
-
-        if (animFrame >= clip->count)
-        {
-            animFrame = 0;
-        }
-
         if (animFrame == 0)
         {
-            baseSpeed.x = baseSpeed.y = baseSpeed.z = 0;
-        }
+            offset.x = offset.y = offset.z = 0;
 
-        if (stateId == STATE_IDLE || stateId == STATE_AIM || stateId == STATE_DEATH)
-        {
-            speed = 0;
+            // TODO hack
+            if (stateId == STATE_IDLE || stateId == STATE_AIM)
+            {
+                offset = frame->offset;
+            }
         }
-        else
-        {
-            speed = frame->speed.x - baseSpeed.x;
-        }
-
-        baseSpeed = frame->speed;
 
         animFrame++;
 
-        if (speed)
+        // play death animation once
+        if (animId == ANIM_DEATH && animFrame >= clip->count)
+        {
+            animFrame = clip->count - 1;
+        }
+
+        animFrame %= clip->count;
+
+        vec3i speed;
+        if (stateId == STATE_TURN)
+        {
+            speed.x = speed.y = speed.z = 0;
+        }
+        else
+        {
+            speed.x = frame->offset.x - offset.x;
+            speed.y = frame->offset.y - offset.y;
+            speed.z = frame->offset.z - offset.z;
+        }
+
+        offset = frame->offset;
+
+        if (speed.x || speed.z)
         {
             int32 s, c;
             sincos(angle, s, c);
 
-            pos.x += c * speed >> 14;
-            pos.z += s * speed >> 14;
+            pos.x += (c * speed.x - s * speed.z) >> FIXED_SHIFT;
+            pos.z += (s * speed.x + c * speed.z) >> FIXED_SHIFT;
         }
+
+        pos.y += speed.y;
     }
 
     bool checkTurn()
     {
-        if (!((gPad & IN_LEFT) ^ (gPad & IN_RIGHT)))
+        if (!(((gPad & IN_LEFT) != 0) ^ ((gPad & IN_RIGHT) != 0)))
             return false;
 
         if (gPad & IN_LEFT)
@@ -279,35 +294,17 @@ struct Player
 
     void update_IDLE()
     {
-        if (checkTurn())
+        if (health <= 25)
         {
-            if (health <= 25)
-            {
-                setAnim(ANIM_BADLY_WALK);
-            }
-            else if (health <= 50)
-            {
-                setAnim(ANIM_HURT_WALK);
-            }
-            else
-            {
-                setAnim(ANIM_WALK);
-            }
+            setAnim(ANIM_BADLY_IDLE);
+        }
+        else if (health <= 50)
+        {
+            setAnim(ANIM_HURT_IDLE);
         }
         else
         {
-            if (health <= 25)
-            {
-                setAnim(ANIM_BADLY_IDLE);
-            }
-            else if (health <= 50)
-            {
-                setAnim(ANIM_HURT_IDLE);
-            }
-            else
-            {
-                setAnim(ANIM_IDLE);
-            }
+            setAnim(ANIM_IDLE);
         }
     }
 
@@ -358,6 +355,24 @@ struct Player
         else
         {
             setAnim(ANIM_BACK);
+        }
+    }
+
+    void update_TURN()
+    {
+        checkTurn();
+
+        if (health <= 25)
+        {
+            setAnim(ANIM_BADLY_WALK);
+        }
+        else if (health <= 50)
+        {
+            setAnim(ANIM_HURT_WALK);
+        }
+        else
+        {
+            setAnim(ANIM_WALK);
         }
     }
 
