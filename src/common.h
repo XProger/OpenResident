@@ -19,8 +19,9 @@ extern int32 gLastFrameIndex;
 #include "stream.h"
 #include "input.h"
 #include "render.h"
-#include "room.h"
 #include "player.h"
 #include "enemy.h"
+#include "room.h"
+#include "script.h"
 
 #endif

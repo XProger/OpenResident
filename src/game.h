@@ -5,37 +5,20 @@
 
 int32 gFrames;
 
-Player player;
-Enemy enemy;
-Room room;
-
 void gameInit()
 {
-    room.loadBG(1, 0, 0);
-
-    player.init(MODEL_LEON);
-    player.setWeapon(WEAPON_NONE);
-    player.pos.x = 1500;
-    player.pos.y = 4000;
-    player.pos.z = 6000;
-    player.angle = -0x4000;
-
-    enemy.init(0x12);
-    enemy.pos.x = -1600;
-    enemy.pos.y = 4300;
-    enemy.pos.z = 3500;
-    enemy.angle = -0x2000;
+    room.init(MODEL_LEON);
+    room.load(1, 0, 0);
 }
 
 void gameFree()
 {
-    player.free();
+    room.free();
 }
 
 void gameTick()
 {
-    player.update();
-    enemy.update();
+    room.update();
 }
 
 void gameUpdate()
@@ -55,8 +38,6 @@ void gameRender()
     renderClear();
 
     room.render();
-    player.render();
-    enemy.render();
 }
 
 #endif

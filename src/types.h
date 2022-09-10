@@ -38,11 +38,22 @@ struct vec4i
     int32 x, y, z, w;
 };
 
-#define BITS_MASK(n)        ((1 << (n)) - 1)
+struct MaskChunk
+{
+    vec2s src;
+    vec2s dst;
+    vec2s size;
+    uint16 depth;
+};
+
+#define BITS_MASK(n)    ((1 << (n)) - 1)
+#define SQR(x)          ((x)*(x))
 
 #ifdef _DEBUG
-    #define ASSERT(x) if (!(x)) __debugbreak()
+    #define LOG(...)        printf(__VA_ARGS__)
+    #define ASSERT(expr)    if (!(expr)) { LOG("ASSERT:\n  %s:%d\n  %s => %s\n", __FILE__, __LINE__, __FUNCTION__, #expr); __debugbreak(); }
 #else
+    #define LOG(...)
     #define ASSERT(x)
 #endif
 

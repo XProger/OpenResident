@@ -17,5 +17,6 @@
     <ClInclude Include="..\..\tables.h" />
     <ClInclude Include="..\..\lzss.h" />
     <ClInclude Include="..\..\mdec.h" />
+    <ClInclude Include="..\..\script.h" />
   </ItemGroup>
 </Project>

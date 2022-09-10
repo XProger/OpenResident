@@ -11,9 +11,11 @@ struct Enemy
     int32 animFrame;
     int32 frameIndex;
     int32 angle;
+    bool  active;
 
     void init(int32 id)
     {
+        // TODO add CDEMD0.EMS & CDEMD1.EMS loader for PSX
         char path[32];
         strcpy(path, "PL0/EMD0/EM0");
         addSuffix(path + strlen(path), id);
@@ -21,6 +23,7 @@ struct Enemy
 
         {
             FileStream stream(path);
+            ASSERT(stream.isValid());
             model.load(&stream);
         }
 
@@ -31,6 +34,7 @@ struct Enemy
             str[-1] = 'M';
 
             FileStream stream(path);
+            ASSERT(stream.isValid());
             model.texture.load(&stream);
         }
 
@@ -42,6 +46,7 @@ struct Enemy
     void free()
     {
         model.free();
+        active = false;
     }
 
     void update()

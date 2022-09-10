@@ -111,9 +111,8 @@ struct MemoryStream : Stream
     uint8* data;
     int32 size;
     int32 pos;
-    bool useScratch;
 
-    MemoryStream(uint8* data, int32 size) : data(data), size(size), pos(0), useScratch(false) {}
+    MemoryStream(uint8* data, int32 size) : data(data), size(size), pos(0) {}
     
     virtual bool isValid()
     {

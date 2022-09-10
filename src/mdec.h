@@ -239,7 +239,7 @@ struct BitStream
     {
         if (!index--)
         {
-            value = *data++; // TODO LE/BE CPU support
+            value = *data++; // TODO BE support
             index = 15;
         }
 
@@ -508,7 +508,7 @@ inline void YUV2RGB24(int32* blk, uint8* image)
     }
 }
 
-void mdec_decode(uint8* data, int32 version, int32 width, int32 height, int32 qscale, uint8* dst)
+int32 mdec_decode(uint8* data, int32 version, int32 width, int32 height, int32 qscale, uint8* dst)
 {
     BitStream bs(data);
 
@@ -631,6 +631,8 @@ void mdec_decode(uint8* data, int32 version, int32 width, int32 height, int32 qs
             }
         }
     }
+
+    return (uint8*)bs.data - data;
 }
 
 #endif

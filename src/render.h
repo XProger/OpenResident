@@ -14,8 +14,9 @@ struct Texture
     int32 count;
 
     void load(Stream* stream);
-    void init(uint8* data32);
+    void init(uint8* data32, int32 w, int32 h);
     void free();
+    void bind() const;
 };
 
 #define MAX_RANGES  32
@@ -79,6 +80,7 @@ struct Skeleton
     Offset offsets[MAX_RANGES];
     Link links[MAX_RANGES];
     uint32 count;
+    int32 height;
     Frame frames[MAX_ANIMATION_FRAMES];
     int32 dataFramesCount;
 
@@ -108,6 +110,13 @@ void renderFree();
 void renderResize(int32 width, int32 height);
 void renderSwap();
 void renderClear();
-void renderBackground(const Texture* texture);
+void renderSetCamera(const vec3i& pos, const vec3i& target, int32 fov);
+void renderBackground(const Texture* texture, const Texture* masks, const MaskChunk* chunks, uint32 chunksCount);
+
+#ifdef _DEBUG
+void renderDebugRectangle(const vec3s* q, uint32 color);
+void renderDebugTriangle(const vec3s* q, uint32 color);
+void renderDebugRounded(const vec3s& pos, int16 R, int16 hx, int16 hz, uint32 color);
+#endif
 
 #endif

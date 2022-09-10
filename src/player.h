@@ -83,6 +83,7 @@ struct Player
     int32 animFrame;
     int32 frameIndex;
     int32 health;
+    int32 floor;
 
     vec3s offset;
 
@@ -99,9 +100,10 @@ struct Player
         animFrame = 0;
         frameIndex = 0;
         health = 100;
+        floor = 0;
 
         char path[32];
-        strcpy(path, "Pl0/PLD/PL");
+        strcpy(path, "PL0/PLD/PL");
         addSuffix(path + strlen(path), modelId);
         strcat(path, ".PLD");
 
@@ -121,7 +123,7 @@ struct Player
         weaponId = id;
 
         char path[32];
-        strcpy(path, "Pl0/PLD/PL");
+        strcpy(path, "PL0/PLD/PL");
         addSuffix(path + strlen(path), modelId);
         strcat(path, "W");
         addSuffix(path + strlen(path), weaponId);
@@ -417,6 +419,7 @@ struct Player
 
     void update_DEATH()
     {
+        pos.y = 1800;
         setAnim(ANIM_DEATH);
     }
 

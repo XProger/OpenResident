@@ -31,6 +31,7 @@
     <ClInclude Include="..\..\player.h" />
     <ClInclude Include="..\..\render.h" />
     <ClInclude Include="..\..\room.h" />
+    <ClInclude Include="..\..\script.h" />
     <ClInclude Include="..\..\stream.h" />
     <ClCompile Include="render.cpp" />
     <ClInclude Include="..\..\tables.h" />

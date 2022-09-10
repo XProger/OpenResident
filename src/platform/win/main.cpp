@@ -11,8 +11,6 @@ int32 gPad;
 int32 gPadStickX;
 int32 gPadStickY;
 
-int32 lastKey;
-
 int32 gFrameIndex;
 int32 gLastFrameIndex;
 
@@ -174,6 +172,9 @@ void inputReset()
 
 void inputUpdate()
 {
+    if (!isActive)
+        return;
+
     gPadStickX = gPadStickY = 256;
 
     if (!_XInputGetState)
@@ -260,8 +261,6 @@ void setKey(uint8 code, uint8 KeyDown)
 {
     int p = 0;
 
-    lastKey = KeyDown ? code : -1;
-
     switch (code)
     {
         case VK_RETURN:
@@ -308,11 +307,6 @@ void setKey(uint8 code, uint8 KeyDown)
     {
         gPad &= ~p;
     }
-}
-
-unsigned short GetKeyNoBlock(void)
-{
-    return lastKey;
 }
 
 // sound
@@ -439,11 +433,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-#define WND_WIDTH 800
-#define WND_HEIGHT 600
+#define WND_WIDTH 960
+#define WND_HEIGHT 720
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
+#ifdef _DEBUG
+    AllocConsole();
+    FILE* fp = nullptr;
+    freopen_s(&fp, "CONIN$", "r", stdin);
+    freopen_s(&fp, "CONOUT$", "w", stdout);
+    freopen_s(&fp, "CONOUT$", "w", stderr);
+    LOG("OpenResident\n\n");
+#endif
+
     RECT r = { 0, 0, WND_WIDTH, WND_HEIGHT };
 
     AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);

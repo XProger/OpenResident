@@ -10,9 +10,14 @@
 #define MAX_UI_PRIMS    128
 #define MAX_CLUTS       4
 
-#define PI          3.14159265358979323846f
-#define DEG2RAD     (PI / 180.0f)
-#define RAD2DEG     (180.0f / PI)
+#define PI              3.14159265358979323846f
+#define DEG2RAD         (PI / 180.0f)
+#define RAD2DEG         (180.0f / PI)
+
+#define PROJ_Z_NEAR     256.0f
+#define PROJ_Z_FAR      (64 * 1024.0f)
+#define PROJ_Z_CLIP     ((PROJ_Z_NEAR + PROJ_Z_FAR) / (PROJ_Z_NEAR - PROJ_Z_FAR))
+#define PROJ_W_CLIP     (2.0f * PROJ_Z_FAR * PROJ_Z_NEAR / (PROJ_Z_NEAR - PROJ_Z_FAR))
 
 extern HWND hWnd;
 HDC hDC;
@@ -83,9 +88,10 @@ struct mat4
         e23 = (znear + zfar) / (znear - zfar);
     }
 
-    void perspective(float fov, float aspect, float znear, float zfar)
+    void perspective(float tan, float aspect, float znear, float zfar)
     {
-        float y = tanf(fov * 0.5f * DEG2RAD) * znear;
+        // tan = tanf(fov * 0.5f)
+        float y = tan * znear;
         float x = y;
 
         x = y * aspect;
@@ -99,17 +105,6 @@ struct mat4
         e12 = 0.0f;
         e32 = -1.0f;
         e23 = 2.0f * zfar * znear / (znear - zfar);
-
-        // RE specific axis flip
-        e01 = -e01;
-        e11 = -e11;
-        e21 = -e21;
-        e31 = -e31;
-
-        e02 = -e02;
-        e12 = -e12;
-        e22 = -e22;
-        e32 = -e32;
     }
 
     mat4 operator * (const mat4 &m) const {
@@ -181,6 +176,25 @@ struct mat4
         *this = *this * m;
     }
 };
+
+struct vec3
+{
+    float x, y, z;
+};
+
+float dot(const vec3& a, const vec3& b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+vec3 cross(const vec3& a, const vec3& b)
+{
+    vec3 r;
+    r.x = a.y * b.z - a.z * b.y;
+    r.y = a.z * b.x - a.x * b.z;
+    r.z = a.x * b.y - a.y * b.x;
+    return r;
+}
 
 float dbg_clear;
 
@@ -264,6 +278,7 @@ enum VertexAttrib
     aCoord,
     aNormal,
     aTexCoord,
+    aColor,
     aMAX
 };
 
@@ -295,10 +310,12 @@ struct Shader
             glUniform4fv(uid[type], 1, (GLfloat*)v);
         }
     }
-};
 
-Shader shaderModel;
-Shader shader2D;
+    void bind()
+    {
+        glUseProgram(id);
+    }
+};
 
 const char* GLSL_HEADER_VERT_GL3 = 
     "#version 150\n"
@@ -313,6 +330,8 @@ const char* GLSL_HEADER_FRAG_GL3 =
     "#define varying in\n"
     "#define texture2D texture\n"
     "out vec4 fragColor;\n";
+
+Shader shaderModel;
 
 const char* sh_model =
     "varying vec2 vTexCoord;\n"
@@ -345,19 +364,21 @@ const char* sh_model =
 
     "#endif\n";
 
-const char* sh_2D =
+Shader shaderBackground;
+
+const char* sh_background =
     "varying vec2 vTexCoord;\n"
 
     "#ifdef VERTEX\n"
         "uniform mat4 uProjMatrix;\n"
         "uniform vec4 uTexParam;\n"
 
-        "attribute vec2 aCoord;\n"
+        "attribute vec4 aCoord;\n"
         "attribute vec4 aTexCoord;\n"
 
         "void main() {\n"
             "vTexCoord.xy = aTexCoord.xy * uTexParam.xy;\n"
-            "gl_Position = uProjMatrix * vec4(aCoord, 0.0, 1.0);\n"
+            "gl_Position = uProjMatrix * aCoord;\n"
         "}\n"
 
     "#else\n"
@@ -369,6 +390,67 @@ const char* sh_2D =
         "}\n"
 
     "#endif\n";
+
+Shader shaderBackgroundMask;
+
+const char* sh_background_mask =
+    "varying vec2 vTexCoord;\n"
+
+    "#ifdef VERTEX\n"
+        "uniform mat4 uProjMatrix;\n"
+        "uniform vec4 uTexParam;\n"
+
+        "attribute vec4 aCoord;\n"
+        "attribute vec4 aTexCoord;\n"
+
+        "void main() {\n"
+            "vTexCoord.xy = aTexCoord.xy * uTexParam.xy;\n"
+            "float z = -32.0 * aCoord.z;\n"
+            "vec4 p = uProjMatrix * aCoord;\n"
+            "gl_Position = vec4(p.xy, -(z * uTexParam.z + uTexParam.w) / z, 1.0);\n"
+        "}\n"
+
+    "#else\n"
+
+        "uniform sampler2D sDiffuse;\n"
+
+        "void main() {\n"
+            "fragColor = texture2D(sDiffuse, vTexCoord);\n"
+            "if (fragColor.a < 0.5) discard;\n"
+        "}\n"
+
+    "#endif\n";
+
+
+#ifdef _DEBUG
+Shader shaderDebug;
+
+const char* sh_debug =
+    "varying vec4 vColor;\n"
+
+    "#ifdef VERTEX\n"
+        "uniform mat4 uProjMatrix;\n"
+        "uniform mat4 uViewMatrix;\n"
+
+        "attribute vec4 aCoord;\n"
+        "attribute vec4 aColor;\n"
+
+        "void main() {\n"
+            "vColor = aColor;\n"
+            "gl_Position = uProjMatrix * (uViewMatrix * aCoord);\n"
+        "}\n"
+
+    "#else\n"
+
+        "void main() {\n"
+            "fragColor = vColor;\n"
+        "}\n"
+
+    "#endif\n";
+#endif
+
+GLuint uiVAO;
+GLuint uiVBO[2];
 
 void compileShader(Shader* shader, const char* text)
 {
@@ -393,8 +475,8 @@ void compileShader(Shader* shader, const char* text)
         glGetShaderInfoLog(obj, sizeof(info), NULL, info);
         if (info[0] && strlen(info) > 8)
         {
-            OutputDebugString(info);
-            ASSERT(false);
+            LOG(info);
+            ASSERT(0);
         }
 
         glAttachShader(shader->id, obj);
@@ -404,18 +486,19 @@ void compileShader(Shader* shader, const char* text)
     glBindAttribLocation(shader->id, aCoord, "aCoord");
     glBindAttribLocation(shader->id, aNormal, "aNormal");
     glBindAttribLocation(shader->id, aTexCoord, "aTexCoord");
+    glBindAttribLocation(shader->id, aColor, "aColor");
 
     glLinkProgram(shader->id);
 
     glGetProgramInfoLog(shader->id, sizeof(info), NULL, info);
     if (info[0] && strlen(info) > 8)
     {
-        OutputDebugString(info);
+        LOG(info);
         ASSERT(0);
     }
 
     i = 0;
-    glUseProgram(shader->id);
+    shader->bind();
     glUniform1iv(glGetUniformLocation(shader->id, "sDiffuse"), 1, &i);
 
     shader->uid[uProjMatrix] = glGetUniformLocation(shader->id, "uProjMatrix");
@@ -438,7 +521,7 @@ void Texture::load(Stream* stream)
     };
 
     uint32 version = stream->u32();
-    ASSERT(version = 0x10);
+    ASSERT(version == 0x10);
 
     TextureFormat fmt = TextureFormat(stream->u32() & 7);
 
@@ -454,25 +537,25 @@ void Texture::load(Stream* stream)
     stream->skip(4); // texture size
     x = stream->s16();
     y = stream->s16();
-    width = stream->s16();
-    height = stream->s16();
+    int32 w = stream->s16();
+    int32 h = stream->s16();
 
-    uint8* data = new uint8[width * height * sizeof(uint16)];
-    stream->read(data, width * height * sizeof(uint16));
+    uint8* data = new uint8[w * h * sizeof(uint16)];
+    stream->read(data, w * h * sizeof(uint16));
 
     // convert width from shorts to pixels
     if (fmt == TEX_FMT_4)
     {
-        width *= 4;
+        w *= 4;
     }
     else if (fmt == TEX_FMT_8)
     {
-        width *= 2;
+        w *= 2;
     }
 
-    uint8* data32 = new uint8[width * height * 4];
+    uint8* data32 = new uint8[w * h * 4];
 
-    int32 pageWidth = width / count;
+    int32 pageWidth = w / count;
 
     uint8* src = data;
     uint8* dst = data32;
@@ -481,7 +564,7 @@ void Texture::load(Stream* stream)
     {
         case TEX_FMT_4:
         {
-            for (int32 j = 0; j < width * height; j++)
+            for (int32 j = 0; j < w * h; j++)
             {
                 uint16* clut = cluts + ((j / pageWidth) % count) * colors;
                 uint8 index = *src++;
@@ -505,7 +588,7 @@ void Texture::load(Stream* stream)
 
         case TEX_FMT_8:
         {
-            for (int32 j = 0; j < width * height; j++)
+            for (int32 j = 0; j < w * h; j++)
             {
                 uint16* clut = cluts + ((j / pageWidth) % count) * colors;
                 uint8 index = *src++;
@@ -521,7 +604,7 @@ void Texture::load(Stream* stream)
 
         case TEX_FMT_16:
         {
-            for (int32 j = 0; j < width * height; j++)
+            for (int32 j = 0; j < w * h; j++)
             {
                 uint16 value = *(uint16*)src;
                 src += 2;
@@ -536,7 +619,7 @@ void Texture::load(Stream* stream)
 
         case TEX_FMT_24:
         {
-            for (int32 j = 0; j < width * height; j++)
+            for (int32 j = 0; j < w * h; j++)
             {
                 *dst++ = *src++;
                 *dst++ = *src++;
@@ -546,10 +629,10 @@ void Texture::load(Stream* stream)
             break;
         }
 
-        default: ASSERT(false);
+        default: ASSERT(0);
     }
 
-    init(data32);
+    init(data32, w, h);
 
 #if 0
 #ifdef _DEBUG
@@ -563,10 +646,18 @@ void Texture::load(Stream* stream)
     delete[] data;
 }
 
-void Texture::init(uint8* data32)
+void Texture::init(uint8* data32, int32 w, int32 h)
 {
+    if (res && (w > width || h > height))
+    {
+        free();
+    }
+
     if (!res)
     {
+        width = w;
+        height = h;
+
         res = new GLuint();
 
         glGenTextures(1, (GLuint*)res);
@@ -581,7 +672,7 @@ void Texture::init(uint8* data32)
     else
     {
         glBindTexture(GL_TEXTURE_2D, *(GLuint*)res);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data32);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, data32);
     }
 }
 
@@ -592,6 +683,10 @@ void Texture::free()
     res = NULL;
 }
 
+void Texture::bind() const
+{
+    glBindTexture(GL_TEXTURE_2D, *(GLuint*)res);
+}
 
 // animation ==============================================
 void Animation::load(Stream* stream)
@@ -682,6 +777,8 @@ void Skeleton::load(Stream* stream, const Animation* anim)
                 links[links[i].childs[j]].parent = i;
             }
         }
+
+        height = -offsets[0].y;
     }
 
 // animation frames
@@ -789,8 +886,9 @@ struct Vertex
 
 struct VertexUI
 {
-    vec2s coord;
+    vec4s coord;
     vec2s uv;
+    uint32 color;
 };
 
 Index addVertex(int32 idx, const Prim* prim, const Coord* coords, const Coord* normals, const Tile* tile, Vertex* vertices, int32& vCount)
@@ -1088,22 +1186,24 @@ void Model::render(const vec3i& pos, int32 angle, uint16 frameIndex, const Textu
     Texture* pTexture = (Texture*)texture;
     Shader* pShader = &shaderModel;
 
-    gProjMatrix.perspective(75.0f, (float)gWidth / (float)gHeight, 0.1f, 16 * 1024);
-    gViewMatrix.identity();
+    mat4 m = gViewMatrix;
+
     gViewMatrix.translate(pos.x, pos.y, pos.z);
     gViewMatrix.rotateY(-angle * PI / 32768.0f);
 
     vec3s framePos = animSkeleton->frames[frameIndex].pos;
-    gViewMatrix.translate(framePos.x, framePos.y, framePos.z);
+    gViewMatrix.translate(framePos.x, framePos.y + skeleton->height, framePos.z);
 
     glBindTexture(GL_TEXTURE_2D, *((GLuint*)pTexture->res));
     float texParam[4] = { 1.0f / pTexture->width, 1.0f / pTexture->height, 1.0f / pTexture->count, 0.0f };
 
-    glUseProgram(pShader->id);
+    pShader->bind();
     pShader->setMatrix(uProjMatrix, gProjMatrix);
     pShader->setVector(uTexParam, texParam);
 
     renderMesh(0, frameIndex, skeleton, animSkeleton);
+
+    gViewMatrix = m;
 }
 
 void Model::renderMesh(uint32 meshIndex, uint32 frameIndex, const Skeleton* skeleton, const Skeleton* animSkeleton)
@@ -1150,9 +1250,6 @@ void* GetProc(const char *name) {
 }
 
 #define GetProcOGL(x) x=(decltype(x))GetProc(#x)
-
-GLuint uiVAO;
-GLuint uiVBO[2];
 
 void renderInit()
 {
@@ -1221,14 +1318,19 @@ void renderInit()
         };
 
         hRC = wglCreateContextAttribsARB(hDC, 0, contextAttribs);
+        LOG("OpenGL 3.2\n");
     } else {
         int format = ChoosePixelFormat(hDC, &pfd);
         SetPixelFormat(hDC, format, &pfd);
         hRC = wglCreateContext(hDC);
-        ASSERT(0);
+        LOG("OpenGL 2.0\n");
     }
 
     wglMakeCurrent(hDC, hRC);
+
+    LOG("Vendor   : %s\n", (char*)glGetString(GL_VENDOR));
+    LOG("Renderer : %s\n", (char*)glGetString(GL_RENDERER));
+    LOG("Version  : %s\n", (char*)glGetString(GL_VERSION));
 
     GetProcOGL(glGenerateMipmap);
 
@@ -1267,7 +1369,12 @@ void renderInit()
     GetProcOGL(glBindVertexArray);
 
     compileShader(&shaderModel, sh_model);
-    compileShader(&shader2D, sh_2D);
+    compileShader(&shaderBackground, sh_background);
+    compileShader(&shaderBackgroundMask, sh_background_mask);
+
+#ifdef _DEBUG
+    compileShader(&shaderDebug, sh_debug);
+#endif
 
     glClearColor(0.2f + dbg_clear, 0.2f, 0.2f, 1.0f);
     glEnable(GL_CULL_FACE);
@@ -1285,7 +1392,8 @@ void renderInit()
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, uiVBO[0]);
     glBindBuffer(GL_ARRAY_BUFFER, uiVBO[1]);
 
-    Index* indicesUI = new Index[MAX_UI_PRIMS * 6];
+    // pre-fill quads index buffer
+    Index indicesUI[MAX_UI_PRIMS * 6];
     for (int32 i = 0; i < MAX_UI_PRIMS; i++)
     {
         indicesUI[i * 6 + 0] = i * 4 + 0;
@@ -1296,28 +1404,19 @@ void renderInit()
         indicesUI[i * 6 + 5] = i * 4 + 3;
     }
 
-    const VertexUI verticesBG[] = {
-        { {   0,   0 }, {   0,   0} },
-        { { 320,   0 }, { 320,   0} },
-        { { 320, 240 }, { 320, 240} },
-        { {   0, 240 }, {   0, 240} },
-    };
-
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, MAX_UI_PRIMS * sizeof(Index), indicesUI, GL_STATIC_DRAW);
-    glBufferData(GL_ARRAY_BUFFER, MAX_UI_PRIMS * 4 * sizeof(VertexUI), NULL, GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, MAX_UI_PRIMS * 6 * sizeof(Index), indicesUI, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, MAX_UI_PRIMS * 4 * sizeof(VertexUI), NULL, GL_DYNAMIC_DRAW);
     
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(VertexUI) * 4, verticesBG); // set persistent vertices for background draw
-
     glEnableVertexAttribArray(aCoord);
     glEnableVertexAttribArray(aTexCoord);
+    glEnableVertexAttribArray(aColor);
 
     VertexUI* v = NULL;
-    glVertexAttribPointer(aCoord, 2, GL_SHORT, GL_FALSE, sizeof(*v), &v->coord);
+    glVertexAttribPointer(aCoord, 4, GL_SHORT, GL_FALSE, sizeof(*v), &v->coord);
     glVertexAttribPointer(aTexCoord, 4, GL_SHORT, GL_FALSE, sizeof(*v), &v->uv);
+    glVertexAttribPointer(aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(*v), &v->color);
 
     glBindVertexArray(0);
-
-    delete[] indicesUI;
 }
 
 void renderFree()
@@ -1344,24 +1443,262 @@ void renderClear()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
-void renderBackground(const Texture* texture)
+void renderSetCamera(const vec3i& pos, const vec3i& target, int32 fov)
 {
-    glDisable(GL_DEPTH_TEST);
+    gProjMatrix.perspective(120.0f / fov, (float)gWidth / (float)gHeight, PROJ_Z_NEAR, PROJ_Z_FAR);
 
-    Shader* pShader = &shader2D;
+    vec3 P, R, U, D;
+    D.x = (float)(pos.x - target.x);
+    D.y = (float)(pos.y - target.y);
+    D.z = (float)(pos.z - target.z);
 
-    glBindTexture(GL_TEXTURE_2D, *(GLuint*)texture->res);
+    float dist = sqrtf(SQR(D.x) + SQR(D.y) + SQR(D.z));
+    ASSERT(dist > 0.00001);
+    dist = 1.0f / dist;
+
+    D.x *= dist;
+    D.y *= dist;
+    D.z *= dist;
+
+    U.x = 0.0f;
+    U.y = 1.0f;
+    U.z = 0.0f;
+
+    P.x = (float)pos.x;
+    P.y = (float)pos.y;
+    P.z = (float)pos.z;
+
+    R = cross(D, U);
+    U = cross(D, R);
+
+    gViewMatrix.e00 = R.x;
+    gViewMatrix.e01 = R.y;
+    gViewMatrix.e02 = R.z;
+    gViewMatrix.e03 = -dot(P, R);
+    gViewMatrix.e10 = U.x;
+    gViewMatrix.e11 = U.y;
+    gViewMatrix.e12 = U.z;
+    gViewMatrix.e13 = -dot(P, U);
+    gViewMatrix.e20 = D.x;
+    gViewMatrix.e21 = D.y;
+    gViewMatrix.e22 = D.z;
+    gViewMatrix.e23 = -dot(P, D);
+    gViewMatrix.e30 = 0.0f;
+    gViewMatrix.e31 = 0.0f;
+    gViewMatrix.e32 = 0.0f;
+    gViewMatrix.e33 = 1.0f;
+}
+
+int32 uiAddQuad(VertexUI* vertices, const vec2s& src, const vec2s& dst, const vec2s& size, int32 z)
+{
+    ASSERT(z < 1024);
+
+    vertices->coord.x = dst.x;
+    vertices->coord.y = dst.y;
+    vertices->coord.z = z;
+    vertices->coord.w = 1;
+    vertices->uv.x = src.x;
+    vertices->uv.y = src.y;
+    vertices->color = 0xFFFFFFFF;
+    vertices++;
+
+    vertices->coord.x = dst.x + size.x;
+    vertices->coord.y = dst.y;
+    vertices->coord.z = z;
+    vertices->coord.w = 1;
+    vertices->uv.x = src.x + size.x;
+    vertices->uv.y = src.y;
+    vertices->color = 0xFFFFFFFF;
+    vertices++;
+
+    vertices->coord.x = dst.x + size.x;
+    vertices->coord.y = dst.y + size.y;
+    vertices->coord.z = z;
+    vertices->coord.w = 1;
+    vertices->uv.x = src.x + size.x;
+    vertices->uv.y = src.y + size.y;
+    vertices->color = 0xFFFFFFFF;
+    vertices++;
+
+    vertices->coord.x = dst.x;
+    vertices->coord.y = dst.y + size.y;
+    vertices->coord.z = z;
+    vertices->coord.w = 1;
+    vertices->uv.x = src.x;
+    vertices->uv.y = src.y + size.y;
+    vertices->color = 0xFFFFFFFF;
+    vertices++;
+
+    return 4;
+}
+
+void renderBackground(const Texture* texture, const Texture* masks, const MaskChunk* chunks, uint32 chunksCount)
+{
+    ASSERT(chunksCount + 1 <= MAX_UI_PRIMS);
+    
+    static const vec2s bgPos = { 0, 0 };
+    static const vec2s bgSize = { 320, 240 };
+
+    VertexUI vertices[MAX_UI_PRIMS * 4];
+    VertexUI* vptr = vertices;
+
+    // add background
+    vptr += uiAddQuad(vptr, bgPos, bgPos, bgSize, 0);
+
+    // add background masks
+    for (uint32 i = 0; i < chunksCount; i++, chunks++)
+    {
+        vptr += uiAddQuad(vptr, chunks->src, chunks->dst, chunks->size, chunks->depth);
+    }
+
+    int32 vCount = (vptr - vertices);
+
+    glBindBuffer(GL_ARRAY_BUFFER, uiVBO[1]);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(VertexUI) * vCount, vertices);
+
     glBindVertexArray(uiVAO);
-    glUseProgram(pShader->id);
-
-    float texParam[4] = { 1.0f / texture->width, 1.0f / texture->height, 1.0f / texture->count, 0.0f };
-    pShader->setVector(uTexParam, texParam);
 
     mat4 mProj;
     mProj.ortho(0, 320, 240, 0, 0, 1);
-    pShader->setMatrix(uProjMatrix, mProj);
 
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
+    { // draw background
+        Shader* pShader = &shaderBackground;
+        pShader->bind();
+        texture->bind();
+        float texParam[4] = { 1.0f / texture->width, 1.0f / texture->height, 0.0f, 0.0f };
+        pShader->setVector(uTexParam, texParam);
+        pShader->setMatrix(uProjMatrix, mProj);
 
-    glEnable(GL_DEPTH_TEST);
+        glDisable(GL_DEPTH_TEST);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    // draw background masks
+    if (chunksCount > 0)
+    {
+        Shader* pShader = &shaderBackgroundMask;
+        pShader->bind();
+        masks->bind();
+        float texParam[4] = { 1.0f / masks->width, 1.0f / masks->height, PROJ_Z_CLIP, PROJ_W_CLIP };
+        pShader->setVector(uTexParam, texParam);
+        pShader->setMatrix(uProjMatrix, mProj);
+
+        glDrawElements(GL_TRIANGLES, (vCount/ 4 - 1) * 6, GL_UNSIGNED_SHORT, (GLvoid*)(sizeof(Index) * 6)); // offset from background quad
+    }
 }
+
+#ifdef _DEBUG
+void renderDebugBegin()
+{
+
+
+}
+
+void renderDebugPrimitive(const VertexUI* vertices, int32 vCount, int32 iCount)
+{
+    // color = AABBGGRR
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_DEPTH_TEST);
+    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+    Shader* pShader = &shaderDebug;
+
+    pShader->bind();
+    pShader->setMatrix(uProjMatrix, gProjMatrix);
+    pShader->setMatrix(uViewMatrix, gViewMatrix);
+
+    glBindBuffer(GL_ARRAY_BUFFER, uiVBO[1]);
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(VertexUI) * 4, sizeof(VertexUI) * vCount, vertices); // put 4 vertices after BG
+
+    glBindVertexArray(uiVAO);
+
+    glDrawElements(GL_TRIANGLES, iCount, GL_UNSIGNED_SHORT, (GLvoid*)(sizeof(Index) * 6));
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+}
+
+void renderDebugRectangle(const vec3s* q, uint32 color)
+{
+    const VertexUI vertices[] = {
+        { { q[0].x, q[0].y, q[0].z, 1 }, { 0, 0 }, color },
+        { { q[1].x, q[1].y, q[1].z, 1 }, { 0, 0 }, color },
+        { { q[2].x, q[2].y, q[2].z, 1 }, { 0, 0 }, color },
+        { { q[3].x, q[3].y, q[3].z, 1 }, { 0, 0 }, color }
+    };
+
+    renderDebugPrimitive(vertices, 4, 6);
+}
+
+void renderDebugTriangle(const vec3s* q, uint32 color)
+{
+    const VertexUI vertices[] = {
+        { { q[0].x, q[0].y, q[0].z, 1 }, { 0, 0 }, color },
+        { { q[1].x, q[1].y, q[1].z, 1 }, { 0, 0 }, color },
+        { { q[2].x, q[2].y, q[2].z, 1 }, { 0, 0 }, color },
+    };
+
+    renderDebugPrimitive(vertices, 3, 3);
+}
+
+void renderDebugRounded(const vec3s& pos, int16 R, int16 hx, int16 hz, uint32 color)
+{
+    int16 r = int16(R * 0.7);
+
+    const VertexUI vertices[] = {
+    // center
+        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+    // top
+        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
+    // bottom
+        { { pos.x - hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+    // left
+        { { pos.x - hx - R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx - R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+    // right
+        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx + R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx + R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+    // left top
+        { { pos.x - hx - R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
+        { { pos.x - hx - r, pos.y, pos.z - hz - r, 1 }, { 0, 0 }, color },
+    // right top
+        { { pos.x + hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx + R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx + r, pos.y, pos.z - hz - r, 1 }, { 0, 0 }, color },
+    // left bottom
+        { { pos.x - hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
+        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx - R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x - hx - r, pos.y, pos.z + hz + r, 1 }, { 0, 0 }, color },
+    // right bottom
+        { { pos.x + hx + R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
+        { { pos.x + hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
+        { { pos.x + hx + r, pos.y, pos.z + hz + r, 1 }, { 0, 0 }, color },
+    };
+
+    const int32 count = sizeof(vertices) / (4 * sizeof(vertices[0]));
+
+    renderDebugPrimitive(vertices, 4 * count, 6 * count);
+}
+
+#endif
