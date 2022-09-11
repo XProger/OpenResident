@@ -47,7 +47,6 @@ struct MaskChunk
 };
 
 #define BITS_MASK(n)    ((1 << (n)) - 1)
-#define SQR(x)          ((x)*(x))
 
 #ifdef _DEBUG
     #define LOG(...)        printf(__VA_ARGS__)

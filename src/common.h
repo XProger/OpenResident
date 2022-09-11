@@ -15,10 +15,15 @@ void addSuffix(char* str, int32 value)
 extern int32 gFrameIndex;
 extern int32 gLastFrameIndex;
 
+#define x_sqrt(x) sqrt((uint32)x)
+
+#define x_clamp(x,a,b) ((x) < (a)) ? (a) : (((x) > (b)) ? (b) : (x))
+
 #include "tables.h"
 #include "stream.h"
 #include "input.h"
 #include "render.h"
+#include "collision.h"
 #include "player.h"
 #include "enemy.h"
 #include "room.h"

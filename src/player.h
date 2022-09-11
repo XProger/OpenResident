@@ -6,6 +6,9 @@
 
 #define PLAYER_TURN_ANGLE   1280
 
+#define PLAYER_RADIUS_MAIN  450
+#define PLAYER_RADIUS_AIDA  400
+
 enum ModelID
 {
     MODEL_LEON,
@@ -86,6 +89,8 @@ struct Player
     int32 floor;
 
     vec3s offset;
+
+    Collision* collision;
 
     void init(ModelID id)
     {
@@ -275,6 +280,11 @@ struct Player
         }
 
         pos.y += speed.y;
+
+        collision->x = pos.x - (PLAYER_RADIUS_MAIN >> 1);
+        collision->z = pos.z - (PLAYER_RADIUS_MAIN >> 1);
+        collision->sx = PLAYER_RADIUS_MAIN;
+        collision->sz = PLAYER_RADIUS_MAIN;
     }
 
     bool checkTurn()

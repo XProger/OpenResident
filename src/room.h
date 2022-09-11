@@ -27,36 +27,6 @@
 
 void scriptRun(Stream* stream);
 
-enum ShapeType
-{
-    SHAPE_RECT,
-    SHAPE_TRI_1,
-    SHAPE_TRI_2,
-    SHAPE_TRI_3,
-    SHAPE_TRI_4,
-    SHAPE_RHOMBUS,
-    SHAPE_CIRCLE,
-    SHAPE_OBROUND_X,
-    SHAPE_OBROUND_Z,
-    SHAPE_CLIMB_UP,
-    SHAPE_CLIMB_DOWN,
-    SHAPE_SLOPE,
-    SHAPE_STAIRS,
-    SHAPE_CURVE,
-    SHAPE_MAX
-};
-
-struct Collision
-{
-    int16 x;
-    int16 z;
-    uint16 sx;
-    uint16 sz;
-    uint16 flags;
-    uint16 type;
-    uint32 floor;
-};
-
 struct Camera
 {
     uint16 flags;
@@ -118,7 +88,7 @@ struct Room
     int32 collisionsCount;
     int32 floorsCount;
 
-    Collision collisions[MAX_COLLISIONS];
+    Collision collisions[MAX_COLLISIONS + 1 + MAX_ENEMIES]; // + player + enemies
     Camera cameras[MAX_CAMERAS];
     CameraSwitch cameraSwitches[MAX_CAMERA_SWITCHES];
     Floor floors[MAX_FLOORS];
@@ -172,6 +142,20 @@ struct Room
 
         player.pos = cameras[cameraIdx].target;
         player.pos.y = 0;
+
+
+        player.collision = collisions + collisionsCount;
+        for (int32 i = 0; i < MAX_ENEMIES; i++)
+        {
+            enemies[i].collision = collisions + collisionsCount + 1 + i;
+        }
+
+        for (int32 i = collisionsCount; i < collisionsCount + 1 + MAX_ENEMIES; i++)
+        {
+            Collision* collision = collisions + i;
+            collision->flags = SHAPE_CIRCLE | COL_FLAG_ENABLE;
+            collision->x = collision->z = collision->sx = collision->sz = 0;
+        }
     }
 
     void loadInfo()
@@ -715,9 +699,13 @@ struct Room
         }
     }
 
-    bool collide(int32 x, int32 y)
+    void collide(int32 r, int32& x, int32& z)
     {
-        //
+        for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
+        {
+            const Collision* collision = collisions + i;
+            collision->collide(r, x, z);
+        }
     }
 
     void update()
@@ -727,11 +715,18 @@ struct Room
             Enemy* enemy = enemies + i;
             if (enemy->active)
             {
+                enemy->setTarget(player.pos);
                 enemy->update();
+                enemy->collision->flags &= ~COL_FLAG_ENABLE;
+                collide(ENEMY_RADIUS, enemy->pos.x, enemy->pos.z);
+                enemy->collision->flags |= COL_FLAG_ENABLE;
             }
         }
 
         player.update();
+        player.collision->flags &= ~COL_FLAG_ENABLE;
+        collide(PLAYER_RADIUS_MAIN, player.pos.x, player.pos.z);
+        player.collision->flags |= COL_FLAG_ENABLE;
 
         updateCameraSwitch();
     }
@@ -755,6 +750,8 @@ struct Room
         player.render();
 
     #ifdef DEBUG_CAMERA_SWITCHES
+        //renderDebugBegin();
+
         {
             const CameraSwitch* cameraSwitch = cameraSwitchStart;
 
@@ -802,7 +799,7 @@ struct Room
     #endif
 
     #ifdef DEBUG_COLLISIONS
-        for (int32 i = 0; i < collisionsCount; i++)
+        for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
         {
             const Collision* collision = collisions + i;
 
@@ -823,16 +820,16 @@ struct Room
                 { minX, y, minZ },
                 // extra dup for triangles
                 { minX, y, maxZ },
-                { maxX, y, maxZ },
+                { maxX, y, maxZ }
             };
 
-            int32 shape = (collision->flags & 0x0F);
+            int32 shape = collision->getShape();
 
             switch (shape)
             {
                 case SHAPE_RECT:
                 {
-                    renderDebugRectangle(p, 0x202020FF);
+                    renderDebugRectangle(p, 0x40FFFFFF);
                     break;
                 }
                 case SHAPE_TRI_1:
@@ -840,13 +837,23 @@ struct Room
                 case SHAPE_TRI_3:
                 case SHAPE_TRI_4:
                 {
-                    const int32 startIdx[] = { 0, 0, 3, 1, 2 };
-                    renderDebugTriangle(p + startIdx[shape], 0x202020FF);
+                    const int32 startIdx[] = { 0, 3, 1, 2 };
+                    renderDebugTriangle(p + startIdx[shape - SHAPE_TRI_1], 0x40FFFFFF);
                     break;
                 }
                 case SHAPE_RHOMBUS:
                 {
-                    ASSERT(0);
+                    int16 cx = (minX + maxX) >> 1;
+                    int16 cz = (minZ + maxZ) >> 1;
+
+                    vec3s r[] = {
+                        { cx,   y, maxZ },
+                        { maxX, y, cz   },
+                        { cx,   y, minZ },
+                        { minX, y, cz   }
+                    };
+
+                    renderDebugRectangle(r, 0x40FFFFFF);
                     break;
                 }
                 case SHAPE_CIRCLE:
@@ -857,7 +864,7 @@ struct Room
                     c.x = minX + R;
                     c.y = y;
                     c.z = minZ + R;
-                    renderDebugRounded(c, R, 0, 0, 0x202020FF);
+                    renderDebugRounded(c, R, 0, 0, 0x40FFFFFF);
                     break;
                 }
                 case SHAPE_OBROUND_X:
@@ -867,7 +874,7 @@ struct Room
                     c.x = (minX + maxX) >> 1;
                     c.y = y;
                     c.z = (minZ + maxZ) >> 1;
-                    renderDebugRounded(c, R, ((maxX - minX) >> 1) - R, 0, 0x202020FF);
+                    renderDebugRounded(c, R, ((maxX - minX) >> 1) - R, 0, 0x40FFFFFF);
                     break;
                 }
                 case SHAPE_OBROUND_Z:
@@ -877,7 +884,7 @@ struct Room
                     c.x = (minX + maxX) >> 1;
                     c.y = y;
                     c.z = (minZ + maxZ) >> 1;
-                    renderDebugRounded(c, R, 0, ((maxZ - minZ) >> 1) - R, 0x202020FF);
+                    renderDebugRounded(c, R, 0, ((maxZ - minZ) >> 1) - R, 0x40FFFFFF);
                     break;
                 }
                 case SHAPE_CLIMB_UP:

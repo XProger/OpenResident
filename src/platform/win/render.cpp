@@ -1452,7 +1452,7 @@ void renderSetCamera(const vec3i& pos, const vec3i& target, int32 fov)
     D.y = (float)(pos.y - target.y);
     D.z = (float)(pos.z - target.z);
 
-    float dist = sqrtf(SQR(D.x) + SQR(D.y) + SQR(D.z));
+    float dist = sqrtf(D.x * D.x + D.y * D.y + D.z * D.z);
     ASSERT(dist > 0.00001);
     dist = 1.0f / dist;
 
@@ -1535,7 +1535,7 @@ int32 uiAddQuad(VertexUI* vertices, const vec2s& src, const vec2s& dst, const ve
 void renderBackground(const Texture* texture, const Texture* masks, const MaskChunk* chunks, uint32 chunksCount)
 {
     ASSERT(chunksCount + 1 <= MAX_UI_PRIMS);
-    
+
     static const vec2s bgPos = { 0, 0 };
     static const vec2s bgSize = { 320, 240 };
 
@@ -1591,8 +1591,10 @@ void renderBackground(const Texture* texture, const Texture* masks, const MaskCh
 #ifdef _DEBUG
 void renderDebugBegin()
 {
-
-
+    gViewMatrix.identity();
+    gViewMatrix.rotateX(-PI * 0.5f);
+    gProjMatrix.identity();
+    gProjMatrix.ortho(-0x8000, 0x8000, -0x8000, 0x8000, -0x8000, 0x8000);
 }
 
 void renderDebugPrimitive(const VertexUI* vertices, int32 vCount, int32 iCount)

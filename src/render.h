@@ -114,6 +114,7 @@ void renderSetCamera(const vec3i& pos, const vec3i& target, int32 fov);
 void renderBackground(const Texture* texture, const Texture* masks, const MaskChunk* chunks, uint32 chunksCount);
 
 #ifdef _DEBUG
+void renderDebugBegin();
 void renderDebugRectangle(const vec3s* q, uint32 color);
 void renderDebugTriangle(const vec3s* q, uint32 color);
 void renderDebugRounded(const vec3s& pos, int16 R, int16 hx, int16 hz, uint32 color);
