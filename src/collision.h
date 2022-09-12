@@ -23,14 +23,19 @@ enum ShapeType
     SHAPE_MAX
 };
 
-#define COL_FLAG_ENABLE (1 << 15)
-
-struct Collision
+struct Shape
 {
     int16 x;
     int16 z;
     uint16 sx;
     uint16 sz;
+};
+
+#define COL_FLAG_ENABLE (1 << 15)
+
+struct Collision
+{
+    Shape shape;
     uint16 flags;
     uint16 type;
     uint32 floor;
@@ -45,10 +50,10 @@ struct Collision
         if (!(flags & COL_FLAG_ENABLE))
             return false;
 
-        int32 minX = x;
-        int32 maxX = minX + sx;
-        int32 minZ = z;
-        int32 maxZ = minZ + sz;
+        int32 minX = shape.x;
+        int32 maxX = minX + shape.sx;
+        int32 minZ = shape.z;
+        int32 maxZ = minZ + shape.sz;
 
         // fast check first
         if (px + r < minX || px - r > maxX || pz + r < minZ || pz - r > maxZ)
@@ -142,6 +147,10 @@ struct Collision
             case SHAPE_CLIMB_DOWN:
             case SHAPE_SLOPE:
             case SHAPE_STAIRS:
+            {
+                return rect(minX, maxX, minZ, maxZ, r, px, pz);
+            }
+
             case SHAPE_CURVE:
                 // TODO
                 break;

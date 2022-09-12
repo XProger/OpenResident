@@ -9,6 +9,9 @@ void gameInit()
 {
     room.init(MODEL_LEON);
     room.load(1, 0, 0);
+
+    room.player.pos = room.cameras[room.cameraIndex].target;
+    room.player.pos.y = 0;
 }
 
 void gameFree()

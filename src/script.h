@@ -319,27 +319,29 @@ int32 scriptProcess(Stream* stream)
 
             case CMD_DOOR_SET:
             {
+                Door door;
                 uint8 id = stream->u8();
                 stream->u16(); // TODO
                 stream->u16(); // TODO
-                int16 x = stream->s16();
-                int16 z = stream->s16();
-                uint16 w = stream->u16();
-                uint16 d = stream->u16();
-                int16 nx = stream->s16();
-                int16 ny = stream->s16();
-                int16 nz = stream->s16();
-                int16 angle = stream->s16();
-                uint8 stageIdx = stream->u8();
-                uint8 roomIdx = stream->u8();
-                uint8 cameraIdx = stream->u8();
-                stream->u8(); // TODO
-                uint8 type = stream->u8();
-                uint8 lock = stream->u8();
-                stream->u8(); // TODO
-                uint8 locked = stream->u8();
-                uint8 key = stream->u8();
-                stream->u8(); // TODO
+                door.shape.x = stream->s16();
+                door.shape.z = stream->s16();
+                door.shape.sx = stream->u16();
+                door.shape.sz = stream->u16();
+                door.pos.x = stream->s16();
+                door.pos.y = stream->s16();
+                door.pos.z = stream->s16();
+                door.angle = stream->s16();
+                door.stageIdx = stream->u8();
+                door.roomIdx = stream->u8();
+                door.cameraIdx = stream->u8();
+                door.floor = stream->u8();
+                door.texId = stream->u8();
+                door.type = stream->u8();
+                door.sndId = stream->u8();
+                door.keyId = stream->u8();
+                door.keyType = stream->u8();
+                door.unlocked = stream->u8();
+                room.setDoor(id, &door);
                 break;
             }
 

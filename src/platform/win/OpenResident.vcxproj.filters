@@ -19,5 +19,6 @@
     <ClInclude Include="..\..\mdec.h" />
     <ClInclude Include="..\..\script.h" />
     <ClInclude Include="..\..\collision.h" />
+    <ClInclude Include="..\..\debug.h" />
   </ItemGroup>
 </Project>

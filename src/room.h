@@ -11,19 +11,23 @@
 #include "mdec.h"
 #endif
 
+#ifdef _DEBUG
+    //#define DEBUG_CAMERA_SWITCHES
+    //#define DEBUG_FLOORS
+    #define DEBUG_COLLISIONS
+    #define DEBUG_DOORS
+#endif
+
 #define MAX_COLLISIONS          64
 #define MAX_CAMERAS             16
 #define MAX_CAMERA_SWITCHES     64
 #define MAX_FLOORS              16
 #define MAX_ENEMIES             8
+#define MAX_DOORS               8
 #define MAX_MASK_CHUNKS         1024
 #define MAX_MASKS               8
 
-#ifdef _DEBUG
-    #define DEBUG_CAMERA_SWITCHES
-    //#define DEBUG_FLOORS
-    //#define DEBUG_COLLISIONS
-#endif
+#define DOOR_RADIUS             600
 
 void scriptRun(Stream* stream);
 
@@ -72,18 +76,41 @@ struct CameraSwitch
 
 struct Floor
 {
-    int16 x;
-    int16 z;
-    uint16 sx;
-    uint16 sz;
+    Shape shape;
     uint16 soundIdx;
     uint16 y;
 };
 
+struct Door
+{
+    Shape shape;
+    vec3s pos;
+    int16 angle;
+    uint8 stageIdx;
+    uint8 roomIdx;
+    uint8 cameraIdx;
+    uint8 floor;
+    uint8 texId;
+    uint8 type;
+    uint8 sndId;
+    uint8 keyId;
+    uint8 keyType;
+    uint8 unlocked;
+
+    bool intersect(int32 x, int32 z) const
+    {
+        return ((x >= shape.x) && (x <= shape.x + shape.sx) &&
+                (z >= shape.z) && (z <= shape.z + shape.sz));
+    }
+};
+
+#include "debug.h"
+
 struct Room
 {
     Player player;
-    Enemy enemies[8];
+    Enemy enemies[MAX_ENEMIES];
+    Door doors[MAX_DOORS];
 
     int32 collisionsCount;
     int32 floorsCount;
@@ -135,14 +162,13 @@ struct Room
 
     void load(int32 stageIdx, int32 roomIdx, int32 cameraIdx)
     {
+        memset(doors, 0, sizeof(doors));
+        memset(enemies, 0, sizeof(enemies));
+
         stageIndex = stageIdx;
         roomIndex = roomIdx;
         loadInfo();
         setCameraIndex(cameraIdx);
-
-        player.pos = cameras[cameraIdx].target;
-        player.pos.y = 0;
-
 
         player.collision = collisions + collisionsCount;
         for (int32 i = 0; i < MAX_ENEMIES; i++)
@@ -154,7 +180,10 @@ struct Room
         {
             Collision* collision = collisions + i;
             collision->flags = SHAPE_CIRCLE | COL_FLAG_ENABLE;
-            collision->x = collision->z = collision->sx = collision->sz = 0;
+            collision->shape.x =
+            collision->shape.z =
+            collision->shape.sx =
+            collision->shape.sz = 0;
         }
     }
 
@@ -165,6 +194,8 @@ struct Room
         path[12] = '0' + stageIndex;
         addSuffix(path + 13, roomIndex);
         path[15] = '0' + playerIndex;
+
+        LOG("load [%d %d %d] %s\n", stageIndex, roomIndex, playerIndex, path);
 
         if (loadRDT(path))
             return;
@@ -248,10 +279,10 @@ struct Room
             for (int32 i = 0; i < collisionsCount; i++)
             {
                 Collision* collision = collisions + i;
-                collision->x = stream.s16();
-                collision->z = stream.s16();
-                collision->sx = stream.u16();
-                collision->sz = stream.u16();
+                collision->shape.x = stream.s16();
+                collision->shape.z = stream.s16();
+                collision->shape.sx = stream.u16();
+                collision->shape.sz = stream.u16();
                 collision->flags = stream.u16();
                 collision->type = stream.u16();
                 collision->floor = stream.u32();
@@ -383,10 +414,10 @@ struct Room
         for (int32 i = 0; i < floorsCount; i++)
         {
             Floor* floor = floors + i;
-            floor->x = stream.s16();
-            floor->z = stream.s16();
-            floor->sx = stream.u16();
-            floor->sz = stream.u16();
+            floor->shape.x = stream.s16();
+            floor->shape.z = stream.s16();
+            floor->shape.sx = stream.u16();
+            floor->shape.sz = stream.u16();
             floor->soundIdx = stream.u16();
             floor->y = stream.u16();
         }
@@ -632,7 +663,7 @@ struct Room
 
     void setEnemy(int32 id, int32 model, int32 x, int32 y, int32 z, int32 angle)
     {
-        ASSERT(id <= MAX_ENEMIES);
+        ASSERT(id < MAX_ENEMIES);
 
         Enemy* enemy = enemies + id;
         if (enemy->active)
@@ -646,6 +677,13 @@ struct Room
         enemy->pos.z = z;
         enemy->angle = angle << 4; // 4096 -> 65536
         enemy->active = true;
+    }
+
+    void setDoor(int32 id, const Door* door)
+    {
+        ASSERT(id < MAX_DOORS);
+
+        doors[id] = *door;
     }
 
     void setCameraIndex(int32 cameraIdx)
@@ -704,12 +742,25 @@ struct Room
         for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
         {
             const Collision* collision = collisions + i;
-            collision->collide(r, x, z);
+            if (collision->collide(r, x, z))
+            {
+                switch (collision->getShape())
+                {
+                    case SHAPE_CLIMB_UP:
+                    case SHAPE_CLIMB_DOWN:
+                    case SHAPE_SLOPE:
+                    case SHAPE_STAIRS:
+                        player.stairs = collision;
+                        break;
+                }
+            }
         }
     }
 
     void update()
     {
+        player.stairs = NULL;
+
         for (int32 i = 0; i < MAX_ENEMIES; i++)
         {
             Enemy* enemy = enemies + i;
@@ -728,7 +779,35 @@ struct Room
         collide(PLAYER_RADIUS_MAIN, player.pos.x, player.pos.z);
         player.collision->flags |= COL_FLAG_ENABLE;
 
+        player.updateStairs();
+
         updateCameraSwitch();
+
+        if (gPad & IN_A)
+        {
+            // check doors
+            int32 px = player.pos.x + ((player.dir.x * DOOR_RADIUS) >> FIXED_SHIFT);
+            int32 pz = player.pos.z + ((player.dir.z * DOOR_RADIUS) >> FIXED_SHIFT);
+
+            const Door* door = doors;
+            for (int32 i = 0; i < MAX_DOORS; i++, door++)
+            {
+                if (door->intersect(px, pz))
+                {
+                    player.pos.x = door->pos.x;
+                    player.pos.y = door->pos.y;
+                    player.pos.z = door->pos.z;
+                    player.angle = door->angle << 4;
+                    player.floor = door->floor;
+
+                    load(door->stageIdx + 1, door->roomIdx, door->cameraIdx);
+                    break;
+                }
+            }
+
+            // check items
+            // TODO
+        }
     }
 
     void render()
@@ -750,153 +829,19 @@ struct Room
         player.render();
 
     #ifdef DEBUG_CAMERA_SWITCHES
-        //renderDebugBegin();
-
-        {
-            const CameraSwitch* cameraSwitch = cameraSwitchStart;
-
-            while (1)
-            {
-                cameraSwitch++;
-
-                if (cameraSwitch->from != cameraIndex)
-                    break;
-
-                if (cameraSwitch->floor != player.floor && cameraSwitch->floor != 0xFF)
-                    continue;
-
-                vec3s p[] = {
-                    { cameraSwitch->a.x, 0, cameraSwitch->a.y },
-                    { cameraSwitch->b.x, 0, cameraSwitch->b.y },
-                    { cameraSwitch->c.x, 0, cameraSwitch->c.y },
-                    { cameraSwitch->d.x, 0, cameraSwitch->d.y },
-                };
-                renderDebugRectangle(p, 0x80802020);
-            }
-        }
+        debugDrawCameraSwitches(cameraSwitchStart, cameraIndex, player.floor);
     #endif
 
     #ifdef DEBUG_FLOORS
-        for (int32 i = 0; i < floorsCount; i++)
-        {
-            const Floor* floor = floors + i;
-
-            int16 y = floor->y;
-            int16 minX = floor->x;
-            int16 minZ = floor->z;
-            int16 maxX = minX + floor->sx;
-            int16 maxZ = minZ + floor->sz;
-
-            vec3s v[] = {
-                { minX, y, maxZ },
-                { maxX, y, maxZ },
-                { maxX, y, minZ },
-                { minX, y, minZ },
-            };
-
-            renderDebugRectangle(v, 0x8020FF20);
-        }
+        debugDrawFloors(floors, floorsCount);
     #endif
 
     #ifdef DEBUG_COLLISIONS
-        for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
-        {
-            const Collision* collision = collisions + i;
+        debugDrawCollisions(collisions, collisionsCount + 1 + MAX_ENEMIES);
+    #endif
 
-            int16 minX = collision->x;
-            int16 minZ = collision->z;
-            int16 maxX = minX + collision->sx;
-            int16 maxZ = minZ + collision->sz;
-
-            //int16 y = (collision->type >> 11) * 100;
-            //int16 y = -1800 * ((collision->type >> 6) & 0x1F);
-            //y -= (collision->type >> 11) * 100;
-            int16 y = 0;
-
-            vec3s p[] = {
-                { minX, y, maxZ },
-                { maxX, y, maxZ },
-                { maxX, y, minZ },
-                { minX, y, minZ },
-                // extra dup for triangles
-                { minX, y, maxZ },
-                { maxX, y, maxZ }
-            };
-
-            int32 shape = collision->getShape();
-
-            switch (shape)
-            {
-                case SHAPE_RECT:
-                {
-                    renderDebugRectangle(p, 0x40FFFFFF);
-                    break;
-                }
-                case SHAPE_TRI_1:
-                case SHAPE_TRI_2:
-                case SHAPE_TRI_3:
-                case SHAPE_TRI_4:
-                {
-                    const int32 startIdx[] = { 0, 3, 1, 2 };
-                    renderDebugTriangle(p + startIdx[shape - SHAPE_TRI_1], 0x40FFFFFF);
-                    break;
-                }
-                case SHAPE_RHOMBUS:
-                {
-                    int16 cx = (minX + maxX) >> 1;
-                    int16 cz = (minZ + maxZ) >> 1;
-
-                    vec3s r[] = {
-                        { cx,   y, maxZ },
-                        { maxX, y, cz   },
-                        { cx,   y, minZ },
-                        { minX, y, cz   }
-                    };
-
-                    renderDebugRectangle(r, 0x40FFFFFF);
-                    break;
-                }
-                case SHAPE_CIRCLE:
-                {
-                    ASSERT((maxX - minX) == (maxZ - minZ));
-                    int32 R = (maxX - minX) >> 1;
-                    vec3s c;
-                    c.x = minX + R;
-                    c.y = y;
-                    c.z = minZ + R;
-                    renderDebugRounded(c, R, 0, 0, 0x40FFFFFF);
-                    break;
-                }
-                case SHAPE_OBROUND_X:
-                {
-                    int32 R = (maxZ - minZ) >> 1;
-                    vec3s c;
-                    c.x = (minX + maxX) >> 1;
-                    c.y = y;
-                    c.z = (minZ + maxZ) >> 1;
-                    renderDebugRounded(c, R, ((maxX - minX) >> 1) - R, 0, 0x40FFFFFF);
-                    break;
-                }
-                case SHAPE_OBROUND_Z:
-                {
-                    int32 R = (maxX - minX) >> 1;
-                    vec3s c;
-                    c.x = (minX + maxX) >> 1;
-                    c.y = y;
-                    c.z = (minZ + maxZ) >> 1;
-                    renderDebugRounded(c, R, 0, ((maxZ - minZ) >> 1) - R, 0x40FFFFFF);
-                    break;
-                }
-                case SHAPE_CLIMB_UP:
-                case SHAPE_CLIMB_DOWN:
-                case SHAPE_SLOPE:
-                case SHAPE_STAIRS:
-                case SHAPE_CURVE:
-                    break;
-                default:;
-                    ASSERT(0);
-            }
-        }
+    #ifdef DEBUG_DOORS
+        debugDrawDoors(doors, MAX_DOORS);
     #endif
     }
 };

@@ -66,6 +66,8 @@ struct Enemy
         angle = -8192;
 
         animId = rand() & 7;
+
+        collision = NULL;
     }
 
     void free()
@@ -118,10 +120,10 @@ struct Enemy
 
         pos.y += speed.y;
 
-        collision->x = pos.x - (ENEMY_RADIUS >> 1);
-        collision->z = pos.z - (ENEMY_RADIUS >> 1);
-        collision->sx = ENEMY_RADIUS;
-        collision->sz = ENEMY_RADIUS;
+        collision->shape.x = pos.x - (ENEMY_RADIUS >> 1);
+        collision->shape.z = pos.z - (ENEMY_RADIUS >> 1);
+        collision->shape.sx = ENEMY_RADIUS;
+        collision->shape.sz = ENEMY_RADIUS;
     }
 
     void render()

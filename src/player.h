@@ -78,6 +78,7 @@ struct Player
     StateID stateId;
 
     vec3i pos;
+    vec3i dir;
     int16 angle;
 
     Model model;
@@ -91,6 +92,7 @@ struct Player
     vec3s offset;
 
     Collision* collision;
+    const Collision* stairs;
 
     void init(ModelID id)
     {
@@ -106,6 +108,9 @@ struct Player
         frameIndex = 0;
         health = 100;
         floor = 0;
+
+        collision = NULL;
+        stairs = NULL;
 
         char path[32];
         strcpy(path, "PL0/PLD/PL");
@@ -270,21 +275,25 @@ struct Player
 
         offset = frame->offset;
 
+        int32 s, c;
+        sincos(angle, s, c);
+
+        dir.x = c;
+        dir.y = 0;
+        dir.z = s;
+
         if (speed.x || speed.z)
         {
-            int32 s, c;
-            sincos(angle, s, c);
-
             pos.x += (c * speed.x - s * speed.z) >> FIXED_SHIFT;
             pos.z += (s * speed.x + c * speed.z) >> FIXED_SHIFT;
         }
 
         pos.y += speed.y;
 
-        collision->x = pos.x - (PLAYER_RADIUS_MAIN >> 1);
-        collision->z = pos.z - (PLAYER_RADIUS_MAIN >> 1);
-        collision->sx = PLAYER_RADIUS_MAIN;
-        collision->sz = PLAYER_RADIUS_MAIN;
+        collision->shape.x = pos.x - (PLAYER_RADIUS_MAIN >> 1);
+        collision->shape.z = pos.z - (PLAYER_RADIUS_MAIN >> 1);
+        collision->shape.sx = PLAYER_RADIUS_MAIN;
+        collision->shape.sz = PLAYER_RADIUS_MAIN;
     }
 
     bool checkTurn()
@@ -431,6 +440,13 @@ struct Player
     {
         pos.y = 1800;
         setAnim(ANIM_DEATH);
+    }
+
+    void updateStairs()
+    {
+        if (!stairs)
+            return;
+        // TODO
     }
 
     void render()
