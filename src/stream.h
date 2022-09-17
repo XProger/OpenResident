@@ -55,10 +55,7 @@ struct FileStream : Stream
 {
     FILE* f;
 
-    FileStream(const char* fileName)
-    {
-        f = fopen(fileName, "rb");
-    }
+    FileStream(const char* fileName);
 
     ~FileStream()
     {

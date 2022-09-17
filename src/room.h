@@ -740,7 +740,6 @@ struct Room
 
     void collide(int32 floor, int32 r, vec3i& pos)
     {
-        return;
         for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
         {
             const Collision* collision = collisions + i;

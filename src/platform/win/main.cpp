@@ -441,6 +441,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+FileStream::FileStream(const char* fileName)
+{
+    f = fopen(fileName, "rb");
+}
+
 #define WND_WIDTH 960
 #define WND_HEIGHT 720
 
@@ -485,7 +490,6 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         {
             gLastFrameIndex = gFrameIndex;
             gFrameIndex = osGetSystemTimeMS() * 60 / 1000;
-            LOG("%d\n", gFrameIndex);
 
             inputUpdate();
 

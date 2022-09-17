@@ -30,6 +30,12 @@ void gameUpdate()
     int32 count = gFrames >> 1; // 30 Hz
     gFrames -= count << 1;
 
+    // limit frame skipping
+    if (count > 10)
+    {
+        count = 10;
+    }
+
     for (int32 i = 0; i < count; i++)
     {
         gameTick();

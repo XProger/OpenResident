@@ -50,6 +50,11 @@ struct MaskChunk
 #define BITS_MASK(n)    ((1 << (n)) - 1)
 
 #ifdef _DEBUG
+    #if __LINUX__
+        #include <signal.h>
+        #define __debugbreak() raise(SIGTRAP)
+    #endif
+
     #define LOG(...)        printf(__VA_ARGS__)
     #define ASSERT(expr)    if (!(expr)) { LOG("ASSERT:\n  %s:%d\n  %s => %s\n", __FILE__, __LINE__, __FUNCTION__, #expr); __debugbreak(); }
 #else
