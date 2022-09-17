@@ -46,6 +46,7 @@ struct MaskChunk
     uint16 depth;
 };
 
+#define COUNT(arr)      int32(sizeof(arr) / sizeof(arr[0]))
 #define BITS_MASK(n)    ((1 << (n)) - 1)
 
 #ifdef _DEBUG

@@ -80,7 +80,6 @@ struct Skeleton
     Offset offsets[MAX_RANGES];
     Link links[MAX_RANGES];
     uint32 count;
-    int32 height;
     Frame frames[MAX_ANIMATION_FRAMES];
     int32 dataFramesCount;
 
@@ -110,7 +109,7 @@ void renderFree();
 void renderResize(int32 width, int32 height);
 void renderSwap();
 void renderClear();
-void renderSetCamera(const vec3i& pos, const vec3i& target, int32 fov);
+void renderSetCamera(const vec3i& pos, const vec3i& target, int32 persp);
 void renderBackground(const Texture* texture, const Texture* masks, const MaskChunk* chunks, uint32 chunksCount);
 
 #ifdef _DEBUG

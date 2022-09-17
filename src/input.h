@@ -3,6 +3,7 @@
 
 enum InputKey
 {
+    IN_NONE     = (0 << 0),
     IN_LEFT     = (1 << 0),
     IN_DOWN     = (1 << 1),
     IN_RIGHT    = (1 << 2),
@@ -18,7 +19,8 @@ enum InputKey
     IN_RB       = (1 << 12),
     IN_RT       = (1 << 13),
     IN_SELECT   = (1 << 14),
-    IN_START    = (1 << 15)
+    IN_START    = (1 << 15),
+    IN_HOME     = (1 << 16)
 };
 
 #endif

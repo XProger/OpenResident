@@ -12,7 +12,7 @@
 #endif
 
 #ifdef _DEBUG
-    //#define DEBUG_CAMERA_SWITCHES
+    #define DEBUG_CAMERA_SWITCHES
     //#define DEBUG_FLOORS
     #define DEBUG_COLLISIONS
     #define DEBUG_DOORS
@@ -22,7 +22,7 @@
 #define MAX_CAMERAS             16
 #define MAX_CAMERA_SWITCHES     64
 #define MAX_FLOORS              16
-#define MAX_ENEMIES             8
+#define MAX_ENEMIES             34
 #define MAX_DOORS               8
 #define MAX_MASK_CHUNKS         1024
 #define MAX_MASKS               8
@@ -34,7 +34,7 @@ void scriptRun(Stream* stream);
 struct Camera
 {
     uint16 flags;
-    uint16 fov;
+    uint16 persp;
     vec3i pos;
     vec3i target;
 
@@ -305,7 +305,7 @@ struct Room
             {
                 Camera* camera = cameras + i;
                 camera->flags = stream.u16();
-                camera->fov = stream.u16();
+                camera->persp = stream.u16() >> 7;
                 camera->pos.x = stream.s32();
                 camera->pos.y = stream.s32();
                 camera->pos.z = stream.s32();
@@ -574,7 +574,8 @@ struct Room
 
                 while (prev--)
                 {
-                    *dst++ = dst[offset];
+                    dst[0] = dst[offset];
+                    dst++;
                 }
             }
 
@@ -737,18 +738,20 @@ struct Room
         }
     }
 
-    void collide(int32 r, int32& x, int32& z)
+    void collide(int32 floor, int32 r, vec3i& pos)
     {
+        return;
         for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
         {
             const Collision* collision = collisions + i;
-            if (collision->collide(r, x, z))
+            if (collision->collide(floor, r, pos))
             {
                 switch (collision->getShape())
                 {
+                    case SHAPE_SLOPE:
+                        break;
                     case SHAPE_CLIMB_UP:
                     case SHAPE_CLIMB_DOWN:
-                    case SHAPE_SLOPE:
                     case SHAPE_STAIRS:
                         player.stairs = collision;
                         break;
@@ -769,14 +772,14 @@ struct Room
                 enemy->setTarget(player.pos);
                 enemy->update();
                 enemy->collision->flags &= ~COL_FLAG_ENABLE;
-                collide(ENEMY_RADIUS, enemy->pos.x, enemy->pos.z);
+                collide(enemy->floor, ENEMY_RADIUS, enemy->pos);
                 enemy->collision->flags |= COL_FLAG_ENABLE;
             }
         }
 
         player.update();
         player.collision->flags &= ~COL_FLAG_ENABLE;
-        collide(PLAYER_RADIUS_MAIN, player.pos.x, player.pos.z);
+        collide(player.floor, PLAYER_RADIUS_MAIN, player.pos);
         player.collision->flags |= COL_FLAG_ENABLE;
 
         player.updateStairs();
@@ -797,7 +800,7 @@ struct Room
                     player.pos.x = door->pos.x;
                     player.pos.y = door->pos.y;
                     player.pos.z = door->pos.z;
-                    player.angle = door->angle << 4;
+                    player.angle = -door->angle << 4;
                     player.floor = door->floor;
 
                     load(door->stageIdx + 1, door->roomIdx, door->cameraIdx);
@@ -816,7 +819,8 @@ struct Room
         
         renderBackground(&background, &masks, camera->maskChunks, camera->maskChunksCount);
 
-        renderSetCamera(camera->pos, camera->target, camera->fov >> 7);
+        renderSetCamera(camera->pos, camera->target, camera->persp);
+
         for (int32 i = 0; i < MAX_ENEMIES; i++)
         {
             Enemy* enemy = enemies + i;
@@ -837,7 +841,7 @@ struct Room
     #endif
 
     #ifdef DEBUG_COLLISIONS
-        debugDrawCollisions(collisions, collisionsCount + 1 + MAX_ENEMIES);
+        debugDrawCollisions(collisions, collisionsCount + 1 + MAX_ENEMIES, player.pos.y);
     #endif
 
     #ifdef DEBUG_DOORS

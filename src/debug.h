@@ -7,7 +7,7 @@
 
 void debugDrawCameraSwitches(const CameraSwitch* cameraSwitch, int32 cameraIndex, int32 floor)
 {
-    //renderDebugBegin();
+    renderDebugBegin();
 
     while (1)
     {
@@ -50,7 +50,7 @@ void debugDrawFloors(const Floor* floor, int32 count)
     }
 }
 
-void debugDrawCollisions(const Collision* collision, int32 count)
+void debugDrawCollisions(const Collision* collision, int32 count, int32 y)
 {
     renderDebugBegin();
 
@@ -60,6 +60,13 @@ void debugDrawCollisions(const Collision* collision, int32 count)
         int16 minZ = collision->shape.z;
         int16 maxX = minX + collision->shape.sx;
         int16 maxZ = minZ + collision->shape.sz;
+
+        uint32 mask = 0x40000000;
+
+        if (collision->getGround() > y)
+        {
+            mask = 0xFF000000;
+        }
 
         //int16 y = (collision->type >> 11) * 100;
         //int16 y = -1800 * ((collision->type >> 6) & 0x1F);
@@ -82,7 +89,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
         {
             case SHAPE_RECT:
             {
-                renderDebugRectangle(p, 0x40FFFFFF);
+                renderDebugRectangle(p, mask | 0xFFFFFF);
                 break;
             }
             case SHAPE_TRI_1:
@@ -91,7 +98,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
             case SHAPE_TRI_4:
             {
                 const int32 startIdx[] = { 0, 3, 1, 2 };
-                renderDebugTriangle(p + startIdx[shape - SHAPE_TRI_1], 0x40FFFFFF);
+                renderDebugTriangle(p + startIdx[shape - SHAPE_TRI_1], mask | 0xFFFFFF);
                 break;
             }
             case SHAPE_RHOMBUS:
@@ -106,7 +113,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
                     { minX, y, cz   }
                 };
 
-                renderDebugRectangle(r, 0x40FFFFFF);
+                renderDebugRectangle(r, mask | 0xFFFFFF);
                 break;
             }
             case SHAPE_CIRCLE:
@@ -117,7 +124,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
                 c.x = minX + R;
                 c.y = y;
                 c.z = minZ + R;
-                renderDebugRounded(c, R, 0, 0, 0x40FFFFFF);
+                renderDebugRounded(c, R, 0, 0, mask | 0xFFFFFF);
                 break;
             }
             case SHAPE_OBROUND_X:
@@ -127,7 +134,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
                 c.x = (minX + maxX) >> 1;
                 c.y = y;
                 c.z = (minZ + maxZ) >> 1;
-                renderDebugRounded(c, R, ((maxX - minX) >> 1) - R, 0, 0x40FFFFFF);
+                renderDebugRounded(c, R, ((maxX - minX) >> 1) - R, 0, mask | 0xFFFFFF);
                 break;
             }
             case SHAPE_OBROUND_Z:
@@ -137,7 +144,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
                 c.x = (minX + maxX) >> 1;
                 c.y = y;
                 c.z = (minZ + maxZ) >> 1;
-                renderDebugRounded(c, R, 0, ((maxZ - minZ) >> 1) - R, 0x40FFFFFF);
+                renderDebugRounded(c, R, 0, ((maxZ - minZ) >> 1) - R, mask | 0xFFFFFF);
                 break;
             }
             case SHAPE_CLIMB_UP:
@@ -145,7 +152,7 @@ void debugDrawCollisions(const Collision* collision, int32 count)
             case SHAPE_SLOPE:
             case SHAPE_STAIRS:
             {
-                renderDebugRectangle(p, 0x40CCFFCC);
+                renderDebugRectangle(p, mask | 0xCCFFCC);
                 break;
             }
 

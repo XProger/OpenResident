@@ -23,11 +23,11 @@ void timerInit()
     QueryPerformanceCounter(&gTimerStart);
 }
 
-long osGetSystemTimeMS()
+uint32 osGetSystemTimeMS()
 {
     LARGE_INTEGER count;
     QueryPerformanceCounter(&count);
-    return (long)((count.QuadPart - gTimerStart.QuadPart) * 1000L / gTimerFreq.QuadPart);
+    return (uint32)((count.QuadPart - gTimerStart.QuadPart) * 1000L / gTimerFreq.QuadPart);
 }
 
 void osQuit()
@@ -37,7 +37,7 @@ void osQuit()
 
 #define INPUT_JOY_COUNT 4
 
-// gamepad
+// input
 typedef struct _XINPUT_GAMEPAD
 {
     WORD wButtons;
@@ -75,7 +75,7 @@ typedef struct JoyDevice
 {
     int32 vL, vR; // current value for left/right motor vibration
     int32 oL, oR; // last applied value
-    int32 time; // time when we can send vibration update
+    uint32 time; // time when we can send vibration update
     int32 mask; // buttons mask
     int32 ready;
 } JoyDevice;
@@ -344,6 +344,14 @@ void soundInit()
     }
 }
 
+void soundFree()
+{
+    waveOutUnprepareHeader(waveOut, &waveBuf[0], sizeof(WAVEHDR));
+    waveOutUnprepareHeader(waveOut, &waveBuf[1], sizeof(WAVEHDR));
+    waveOutReset(waveOut);
+    waveOutClose(waveOut);
+}
+
 void soundFill()
 {
     WAVEHDR *waveHdr = waveBuf + curSoundBuffer;
@@ -459,23 +467,25 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     ShowWindow(hWnd, SW_SHOWDEFAULT);
 
     timerInit();
-    inputInit();
-    soundInit();
-
     srand((int)gTimerStart.QuadPart);
 
+    inputInit();
+    soundInit();
     renderInit();
-
     gameInit();
 
     MSG msg;
     do {
-        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE)) {
+        if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
+        {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
-        } else {
+        }
+        else
+        {
             gLastFrameIndex = gFrameIndex;
-            gFrameIndex = osGetSystemTimeMS() * 3 / 50; // * 60 / 1000
+            gFrameIndex = osGetSystemTimeMS() * 60 / 1000;
+            LOG("%d\n", gFrameIndex);
 
             inputUpdate();
 
@@ -490,8 +500,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         }
     } while (msg.message != WM_QUIT);
 
-    inputFree();
+    gameFree();
     renderFree();
+    soundFree();
+    inputFree();
 
     DestroyWindow(hWnd);
 

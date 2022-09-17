@@ -45,7 +45,27 @@ struct Collision
         return (flags & 0x0F);
     }
 
-    bool collide(int32 r, int32& px, int32& pz) const
+    inline int32 getFloor() const
+    {
+        return (type >> 6) & 0x3F;
+    }
+
+    inline int32 getHeight() const
+    {
+        return (type >> 12);
+    }
+
+    inline int32 getSlope() const
+    {
+        return (type >> 4) & 3;
+    }
+
+    inline int32 getGround() const
+    {
+        return -200 * getHeight() - 1800 * getFloor();
+    }
+
+    bool collide(int32 targetFloor, int32 r, vec3i& pos) const
     {
         if (!(flags & COL_FLAG_ENABLE))
             return false;
@@ -55,8 +75,14 @@ struct Collision
         int32 minZ = shape.z;
         int32 maxZ = minZ + shape.sz;
 
+        int32& px = pos.x;
+        int32& pz = pos.z;
+
         // fast check first
         if (px + r < minX || px - r > maxX || pz + r < minZ || pz - r > maxZ)
+            return false;
+
+        if (floor == 8)
             return false;
 
         switch (getShape())
@@ -145,7 +171,14 @@ struct Collision
 
             case SHAPE_CLIMB_UP:
             case SHAPE_CLIMB_DOWN:
+            {
+                return rect(minX, maxX, minZ, maxZ, r, px, pz);
+            }
+
             case SHAPE_SLOPE:
+                // TODO
+                break;
+
             case SHAPE_STAIRS:
             {
                 return rect(minX, maxX, minZ, maxZ, r, px, pz);

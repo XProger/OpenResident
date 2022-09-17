@@ -520,7 +520,7 @@ const uint32 gSinCosTable[4096] = {
     0xFF373FFF, 0xFF503FFF, 0xFF693FFF, 0xFF824000, 0xFF9B4000, 0xFFB54000, 0xFFCE4000, 0xFFE74000,
 };
 
-#define sincos(x,s,c) {\
+#define x_sincos(x,s,c) {\
     uint32 sc = gSinCosTable[uint32(x << 16) >> 20];\
     s = int32(sc) >> 16;\
     c = int32(sc) << 16 >> 16;\

@@ -27,6 +27,9 @@ struct Enemy
     int32 animId;
     int32 animFrame;
     int32 frameIndex;
+    int32 health;
+    int32 floor;
+
     int16 angle;
     int16 turn;
 
@@ -64,6 +67,7 @@ struct Enemy
         animFrame = 0;
         frameIndex = 0;
         angle = -8192;
+        floor = 0;
 
         animId = rand() & 7;
 
@@ -112,7 +116,7 @@ struct Enemy
         if (speed.x || speed.z)
         {
             int32 s, c;
-            sincos(angle, s, c);
+            x_sincos(angle, s, c);
 
             pos.x += (c * speed.x - s * speed.z) >> FIXED_SHIFT;
             pos.z += (s * speed.x + c * speed.z) >> FIXED_SHIFT;

@@ -1,7 +1,6 @@
 #ifndef H_PLAYER
 #define H_PLAYER
 
-#include <windows.h>
 #include "common.h"
 
 #define PLAYER_TURN_ANGLE   1280
@@ -65,7 +64,10 @@ enum StateID
     STATE_BACK,
     STATE_TURN,
     STATE_AIM,
-    STATE_DEATH
+    STATE_CLIMB_UP,
+    STATE_CLIMB_DOWN,
+    STATE_STAIRS,
+    STATE_DEATH,
 };
 
 extern int32 gPad;
@@ -79,7 +81,6 @@ struct Player
 
     vec3i pos;
     vec3i dir;
-    int16 angle;
 
     Model model;
     Model weapon;
@@ -90,6 +91,7 @@ struct Player
     int32 floor;
 
     vec3s offset;
+    int16 angle;
 
     Collision* collision;
     const Collision* stairs;
@@ -217,6 +219,11 @@ struct Player
             case STATE_AIM:
                 update_AIM();
                 break;
+            case STATE_CLIMB_UP:
+            case STATE_CLIMB_DOWN:
+            case STATE_STAIRS:
+                // TODO
+                break;
             case STATE_DEATH:
                 update_DEATH();
                 break;
@@ -276,7 +283,7 @@ struct Player
         offset = frame->offset;
 
         int32 s, c;
-        sincos(angle, s, c);
+        x_sincos(angle, s, c);
 
         dir.x = c;
         dir.y = 0;
@@ -446,7 +453,41 @@ struct Player
     {
         if (!stairs)
             return;
-        // TODO
+
+        switch (stairs->getShape())
+        {
+            case SHAPE_CLIMB_UP:
+                break;
+
+            case SHAPE_CLIMB_DOWN:
+                break;
+
+            case SHAPE_SLOPE:
+                break;
+
+            case SHAPE_STAIRS:
+            {
+                int32 High = (stairs->getHeight() * -200) + (stairs->getFloor() * -1800);
+
+                //stairs->getFloor() * 1800 / stairs->shape.sx
+                LOG("%d\n", stairs->getGround());
+
+                if (dir.z < 0)
+                {
+                    pos.z -= stairs->shape.sz + 800;
+                    pos.y -= 1800 * 4;
+                }
+                else
+                {
+                    pos.z += stairs->shape.sz + 800;
+                    pos.y += 1800 * 4;
+                }
+
+                stairs = NULL;
+
+                break;
+            }
+        }
     }
 
     void render()

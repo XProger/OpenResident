@@ -1,11 +1,18 @@
-#include <windows.h>
-#include <gl/GL.h>
-#include <gl/glu.h>
-#include <gl/glext.h>
-#include <gl/wglext.h>
 #include <math.h>
 
 #include "render.h"
+
+#ifdef __WIN32__
+    #include <windows.h>
+    #include <gl/GL.h>
+    #include <gl/glu.h>
+    #include <gl/glext.h>
+    #include <gl/wglext.h>
+#elif __LINUX__
+    #include <GL/gl.h>
+    #include <GL/glext.h>
+    #include <GL/glx.h>
+#endif
 
 #define MAX_UI_PRIMS    128
 #define MAX_CLUTS       4
@@ -19,9 +26,14 @@
 #define PROJ_Z_CLIP     ((PROJ_Z_NEAR + PROJ_Z_FAR) / (PROJ_Z_NEAR - PROJ_Z_FAR))
 #define PROJ_W_CLIP     (2.0f * PROJ_Z_FAR * PROJ_Z_NEAR / (PROJ_Z_NEAR - PROJ_Z_FAR))
 
-extern HWND hWnd;
-HDC hDC;
-HGLRC hRC;
+#ifdef __WIN32__
+    extern HWND hWnd;
+    HDC hDC;
+    HGLRC hRC;
+#elif __LINUX__
+    extern Display* dpy;
+    extern Window wnd;
+#endif
 
 int32 gWidth, gHeight;
 
@@ -679,7 +691,7 @@ void Texture::init(uint8* data32, int32 w, int32 h)
 void Texture::free()
 {
     glDeleteTextures(1, (GLuint*)res);
-    delete res;
+    delete (GLuint*)res;
     res = NULL;
 }
 
@@ -777,8 +789,6 @@ void Skeleton::load(Stream* stream, const Animation* anim)
                 links[links[i].childs[j]].parent = i;
             }
         }
-
-        height = -offsets[0].y;
     }
 
 // animation frames
@@ -1192,7 +1202,7 @@ void Model::render(const vec3i& pos, int32 angle, uint16 frameIndex, const Textu
     gViewMatrix.rotateY(-angle * PI / 32768.0f);
 
     vec3s framePos = animSkeleton->frames[frameIndex].pos;
-    gViewMatrix.translate(framePos.x, framePos.y + skeleton->height, framePos.z);
+    gViewMatrix.translate(framePos.x, framePos.y + 1800, framePos.z);
 
     glBindTexture(GL_TEXTURE_2D, *((GLuint*)pTexture->res));
     float texParam[4] = { 1.0f / pTexture->width, 1.0f / pTexture->height, 1.0f / pTexture->count, 0.0f };
@@ -1245,14 +1255,21 @@ void Model::renderMesh(uint32 meshIndex, uint32 frameIndex, const Skeleton* skel
 }
 
 // render ==============================================
-void* GetProc(const char *name) {
+void* GetProc(const char *name)
+{
+#ifdef __WIN32__
     return (void*)wglGetProcAddress(name);
+#elif __LINUX__
+    return (void*)glXGetProcAddress((GLubyte*)name);
+#endif
+    return NULL;
 }
 
 #define GetProcOGL(x) x=(decltype(x))GetProc(#x)
 
 void renderInit()
 {
+#ifdef __WIN32__
     PIXELFORMATDESCRIPTOR pfd;
     memset(&pfd, 0, sizeof(pfd));
     pfd.nSize = sizeof(pfd);
@@ -1327,6 +1344,7 @@ void renderInit()
     }
 
     wglMakeCurrent(hDC, hRC);
+#endif
 
     LOG("Vendor   : %s\n", (char*)glGetString(GL_VENDOR));
     LOG("Renderer : %s\n", (char*)glGetString(GL_RENDERER));
@@ -1421,9 +1439,11 @@ void renderInit()
 
 void renderFree()
 {
+#ifdef __WIN32__
     wglMakeCurrent(0, 0);
     wglDeleteContext(hRC);
     ReleaseDC(hWnd, hDC);
+#endif
 }
 
 void renderResize(int32 width, int32 height)
@@ -1435,7 +1455,11 @@ void renderResize(int32 width, int32 height)
 
 void renderSwap()
 {
+#ifdef __WIN32__
     SwapBuffers(hDC);
+#elif __LINUX__
+    glXSwapBuffers(dpy, wnd);
+#endif
 }
 
 void renderClear()
@@ -1443,9 +1467,9 @@ void renderClear()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
-void renderSetCamera(const vec3i& pos, const vec3i& target, int32 fov)
+void renderSetCamera(const vec3i& pos, const vec3i& target, int32 persp)
 {
-    gProjMatrix.perspective(120.0f / fov, (float)gWidth / (float)gHeight, PROJ_Z_NEAR, PROJ_Z_FAR);
+    gProjMatrix.perspective(120.0f / persp, (float)gWidth / (float)gHeight, PROJ_Z_NEAR, PROJ_Z_FAR);
 
     vec3 P, R, U, D;
     D.x = (float)(pos.x - target.x);
