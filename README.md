@@ -10,6 +10,6 @@ Based on the research of great engineers who spent many years of their lives on 
 - Samuel Yuan ([@samuelyuan](https://github.com/samuelyuan))
 
 ## Screenshots
-![image](https://user-images.githubusercontent.com/796763/188296197-c17d3317-2ba6-43db-bf61-c09ae35e140d.png)
+![image](https://user-images.githubusercontent.com/796763/192126092-b956fac0-e86a-4c5b-a9bc-91b586b2bfbc.png)
 
 
