@@ -151,6 +151,17 @@ struct Player
         weapon.free();
     }
 
+    void reset(const vec3s& newPos, int32 newAngle, int32 newFloor)
+    {
+        pos.x = newPos.x;
+        pos.y = newPos.y;
+        pos.z = newPos.z;
+        angle = -newAngle << 4;
+        floor = newFloor;
+        setState(STATE_IDLE);
+        setAnim(ANIM_IDLE);
+    }
+
     void setAnim(AnimationID id)
     {
         if (animId == id)
@@ -297,10 +308,13 @@ struct Player
 
         pos.y += speed.y;
 
-        collision->shape.x = pos.x - (PLAYER_RADIUS_MAIN >> 1);
-        collision->shape.z = pos.z - (PLAYER_RADIUS_MAIN >> 1);
-        collision->shape.sx = PLAYER_RADIUS_MAIN;
-        collision->shape.sz = PLAYER_RADIUS_MAIN;
+        collision->shape.x = pos.x - PLAYER_RADIUS_MAIN;
+        collision->shape.z = pos.z - PLAYER_RADIUS_MAIN;
+        collision->shape.sx = PLAYER_RADIUS_MAIN << 1;
+        collision->shape.sz = PLAYER_RADIUS_MAIN << 1;
+        collision->flags = SHAPE_CIRCLE | COL_FLAG_ENEMY;
+        collision->floor = 1 << floor;
+        collision->type = 0;
     }
 
     bool checkTurn()
@@ -467,20 +481,17 @@ struct Player
 
             case SHAPE_STAIRS:
             {
-                int32 High = (stairs->getHeight() * -200) + (stairs->getFloor() * -1800);
-
-                //stairs->getFloor() * 1800 / stairs->shape.sx
-                LOG("%d\n", stairs->getGround());
-
                 if (dir.z < 0)
                 {
-                    pos.z -= stairs->shape.sz + 800;
-                    pos.y -= 1800 * 4;
+                    pos.z -= stairs->shape.sz + 900;
+                    pos.y += FLOOR_HEIGHT * 4;
+                    floor++;
                 }
                 else
                 {
-                    pos.z += stairs->shape.sz + 800;
-                    pos.y += 1800 * 4;
+                    pos.z += stairs->shape.sz + 900;
+                    pos.y -= FLOOR_HEIGHT * 4;
+                    floor--;
                 }
 
                 stairs = NULL;

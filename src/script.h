@@ -245,10 +245,19 @@ int32 scriptProcess(Stream* stream)
 
             case CMD_SAVE:
             case CMD_COPY:
+                ASSERT(0);
+                break;
+
             case CMD_CALC_IMM:
+            {
+                stream->skip(5); // TODO
+                break;
+            }
+
             case CMD_CALC_VAR:
             case CMD_RND:
                 ASSERT(0);
+                break;
 
             case CMD_CAM_SET:
             {
@@ -297,9 +306,18 @@ int32 scriptProcess(Stream* stream)
 
             case CMD_DIR_SET:
             case CMD_MEM_SET:
+                ASSERT(0);
+                break;
+
             case CMD_MEM_SET2:
+            {
+                stream->skip(2); // TODO
+                break;
+            }
+
             case CMD_SE_ON:
                 ASSERT(0);
+                break;
 
             case CMD_COL_ID_SET:
             {
@@ -352,7 +370,10 @@ int32 scriptProcess(Stream* stream)
             }
 
             case CMD_MEM_COPY:
-                ASSERT(0);
+            {
+                stream->skip(2); // TODO
+                break;
+            }
 
             case CMD_MEM_CMP:
             {
@@ -398,6 +419,7 @@ int32 scriptProcess(Stream* stream)
             case CMD_SUPER_RESET:
             case CMD_PLC_GUN:
                 ASSERT(0);
+                break;
 
             case CMD_CAM_SWP:
             {
@@ -410,6 +432,7 @@ int32 scriptProcess(Stream* stream)
             case CMD_ESPR_KILL:
             case CMD_DOOR_MDL_SET:
                 ASSERT(0);
+                break;
 
             case CMD_ITEM_AOT_SET:
             {
@@ -423,7 +446,7 @@ int32 scriptProcess(Stream* stream)
 
             case CMD_BGM_CTRL:
             {
-                stream->skip(5);
+                stream->skip(5); // TODO
                 break;
             }
 
@@ -438,7 +461,13 @@ int32 scriptProcess(Stream* stream)
             case CMD_WPN_CHG:
             case CMD_PLC_CNT:
             case CMD_SHAKE_ON:
+                ASSERT(0);
+                break;
+
             case CMD_DIV_SET:
+                stream->skip(1); // TODO
+                break;
+
             case CMD_ITEM_TST:
             case CMD_XA_VOL:
             case CMD_KAGE_SET:
@@ -458,10 +487,16 @@ int32 scriptProcess(Stream* stream)
             }
 
             case CMD_DOOR_SET_4P:
+            {
+                stream->skip(39); // TODO
+                break;
+            }
+
             case CMD_ITEM_SET_4P:
             case CMD_LIGHT_POS:
             case CMD_LIGHT_LUM:
                 ASSERT(0);
+                break;
 
             case CMD_OBJ_RESET:
                 // TODO

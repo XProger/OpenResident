@@ -4,6 +4,8 @@
 #include "types.h"
 #include "stream.h"
 
+#define MAX_LIGHTS  3
+
 struct Texture
 {
     void* res;
@@ -28,7 +30,7 @@ struct MeshRange
 };
 
 #define MAX_ANIMATION_FRAMES    1536
-#define MAX_ANIMATION_CLIPS     32
+#define MAX_ANIMATION_CLIPS     64
 
 #define ANIM_FRAME_INDEX(x)     ((x) & BITS_MASK(12))
 #define ANIM_FRAME_FLAGS(x)     (((x) >> 12) & BITS_MASK(20))
@@ -110,13 +112,14 @@ void renderResize(int32 width, int32 height);
 void renderSwap();
 void renderClear();
 void renderSetCamera(const vec3i& pos, const vec3i& target, int32 persp);
+void renderSetAmbient(uint8 r, uint8 g, uint8 b);
+void renderSetLight(int32 index, const vec3s& pos, uint8 r, uint8 g, uint8 b, uint16 intensity);
 void renderBackground(const Texture* texture, const Texture* masks, const MaskChunk* chunks, uint32 chunksCount);
 
 #ifdef _DEBUG
-void renderDebugBegin();
-void renderDebugRectangle(const vec3s* q, uint32 color);
-void renderDebugTriangle(const vec3s* q, uint32 color);
-void renderDebugRounded(const vec3s& pos, int16 R, int16 hx, int16 hz, uint32 color);
+void renderDebugBegin(bool planar);
+void renderDebugEnd();
+void renderDebugLines(const Index* indices, int32 iCount, const vec3s* vertices, int32 vCount, uint32 color);
 #endif
 
 #endif

@@ -74,6 +74,42 @@ PFNGLGENVERTEXARRAYSPROC            glGenVertexArrays;
 PFNGLDELETEVERTEXARRAYSPROC         glDeleteVertexArrays;
 PFNGLBINDVERTEXARRAYPROC            glBindVertexArray;
 
+// vectors =============================================
+struct vec3
+{
+    float x, y, z;
+};
+
+struct vec4
+{
+    float x, y, z, w;
+};
+
+float dot(const vec3& a, const vec3& b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+vec3 cross(const vec3& a, const vec3& b)
+{
+    vec3 r;
+    r.x = a.y * b.z - a.z * b.y;
+    r.y = a.z * b.x - a.x * b.z;
+    r.z = a.x * b.y - a.y * b.x;
+    return r;
+}
+
+void normalize(vec3& v)
+{
+    float dist = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+    if (dist > 0.00001)
+    {
+        dist = 1.0f / dist;
+        v.x *= dist;
+        v.y *= dist;
+        v.z *= dist;
+    }
+}
 
 // matrix ==============================================
 struct mat4
@@ -106,7 +142,7 @@ struct mat4
         float y = tan * znear;
         float x = y;
 
-        x = y * aspect;
+        y /= aspect;
 
         identity();
         e00 = znear / x;
@@ -189,41 +225,27 @@ struct mat4
     }
 };
 
-struct vec3
-{
-    float x, y, z;
-};
-
-float dot(const vec3& a, const vec3& b)
-{
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-vec3 cross(const vec3& a, const vec3& b)
-{
-    vec3 r;
-    r.x = a.y * b.z - a.z * b.y;
-    r.y = a.z * b.x - a.x * b.z;
-    r.z = a.x * b.y - a.y * b.x;
-    return r;
-}
-
 float dbg_clear;
 
-mat4 gViewMatrix;
-mat4 gProjMatrix;
+mat4 gViewProjMatrix;
+mat4 gModelMatrix;
 
 mat4 gMatrixStack[8];
 mat4* gMatrixPtr = gMatrixStack;
 
+// lighting
+vec4 gAmbient;
+vec4 gLightColor[MAX_LIGHTS];
+vec4 gLightPos[MAX_LIGHTS];
+
 void matrixPush()
 {
-    *gMatrixPtr++ = gViewMatrix;
+    *gMatrixPtr++ = gModelMatrix;
 }
 
 void matrixPop()
 {
-    gViewMatrix = *--gMatrixPtr;
+    gModelMatrix = *--gMatrixPtr;
 }
 
 
@@ -296,9 +318,12 @@ enum VertexAttrib
 
 enum UniformType
 {
-    uProjMatrix,
-    uViewMatrix,
+    uViewProjMatrix,
+    uModelMatrix,
     uTexParam,
+    uAmbient,
+    uLightColor,
+    uLightPos,
     uMAX
 };
 
@@ -307,19 +332,19 @@ struct Shader
     GLuint id;
     GLint uid[uMAX];
 
-    void setMatrix(UniformType type, const mat4& m)
+    void setMatrix(UniformType type, const mat4* m)
     {
         if (uid[type] != -1)
         {
-            glUniformMatrix4fv(uid[type], 1, GL_FALSE, (GLfloat*)&m);
+            glUniformMatrix4fv(uid[type], 1, GL_FALSE, (GLfloat*)m);
         }
     }
 
-    void setVector(UniformType type, const float* v)
+    void setVector(UniformType type, const vec4* v, int32 count)
     {
         if (uid[type] != -1)
         {
-            glUniform4fv(uid[type], 1, (GLfloat*)v);
+            glUniform4fv(uid[type], count, (GLfloat*)v);
         }
     }
 
@@ -330,14 +355,14 @@ struct Shader
 };
 
 const char* GLSL_HEADER_VERT_GL3 = 
-    "#version 150\n"
+    "#version 140\n"
     "#define VERTEX\n"
     "#define varying out\n"
     "#define attribute in\n"
     "#define texture2D texture\n";
 
 const char* GLSL_HEADER_FRAG_GL3 = 
-    "#version 150\n"
+    "#version 140\n"
     "#define FRAGMENT\n"
     "#define varying in\n"
     "#define texture2D texture\n"
@@ -350,9 +375,13 @@ const char* sh_model =
     "varying vec4 vColor;\n"
 
     "#ifdef VERTEX\n"
-        "uniform mat4 uProjMatrix;\n"
-        "uniform mat4 uViewMatrix;\n"
+        "#define MAX_LIGHTS 3\n"
+        "uniform mat4 uViewProjMatrix;\n"
+        "uniform mat4 uModelMatrix;\n"
         "uniform vec4 uTexParam;\n"
+        "uniform vec4 uAmbient;\n"
+        "uniform vec4 uLightColor[MAX_LIGHTS];\n"
+        "uniform vec4 uLightPos[MAX_LIGHTS];\n"
 
         "attribute vec3 aCoord;\n"
         "attribute vec3 aNormal;\n"
@@ -361,8 +390,21 @@ const char* sh_model =
         "void main() {\n"
             "vTexCoord.x = aTexCoord.x * uTexParam.x + aTexCoord.z * uTexParam.z;\n"
             "vTexCoord.y = aTexCoord.y * uTexParam.y;\n"
-            "vColor = vec4(1.0);\n"
-            "gl_Position = uProjMatrix * (uViewMatrix * vec4(aCoord, 1.0));\n"
+
+            "vec4 c = uModelMatrix * vec4(aCoord, 1.0);\n"
+            "vec4 n = uModelMatrix * vec4(aNormal.xyz, 0.0);\n"
+            "n = normalize(n);\n"
+
+            "vec3 light = uAmbient.xyz;\n"
+            "for (int i = 0; i < MAX_LIGHTS; i++) {\n"
+                "vec3 lightVec = (uLightPos[i].xyz - c.xyz) * uLightPos[i].w;\n"
+                "float att = 1.0f - dot(lightVec, lightVec);\n"
+                "float NdotL = dot(n.xyz, normalize(lightVec));\n"
+                "light += max(0.0, NdotL) * max(0.0, att) * uLightColor[i].xyz;\n"
+            "}\n"
+
+            "vColor = vec4(light, 1.0);\n"
+            "gl_Position = uViewProjMatrix * c;\n"
         "}\n"
 
     "#else\n"
@@ -382,7 +424,7 @@ const char* sh_background =
     "varying vec2 vTexCoord;\n"
 
     "#ifdef VERTEX\n"
-        "uniform mat4 uProjMatrix;\n"
+        "uniform mat4 uViewProjMatrix;\n"
         "uniform vec4 uTexParam;\n"
 
         "attribute vec4 aCoord;\n"
@@ -390,7 +432,7 @@ const char* sh_background =
 
         "void main() {\n"
             "vTexCoord.xy = aTexCoord.xy * uTexParam.xy;\n"
-            "gl_Position = uProjMatrix * aCoord;\n"
+            "gl_Position = uViewProjMatrix * aCoord;\n"
         "}\n"
 
     "#else\n"
@@ -409,7 +451,7 @@ const char* sh_background_mask =
     "varying vec2 vTexCoord;\n"
 
     "#ifdef VERTEX\n"
-        "uniform mat4 uProjMatrix;\n"
+        "uniform mat4 uViewProjMatrix;\n"
         "uniform vec4 uTexParam;\n"
 
         "attribute vec4 aCoord;\n"
@@ -418,7 +460,7 @@ const char* sh_background_mask =
         "void main() {\n"
             "vTexCoord.xy = aTexCoord.xy * uTexParam.xy;\n"
             "float z = -32.0 * aCoord.z;\n"
-            "vec4 p = uProjMatrix * aCoord;\n"
+            "vec4 p = uViewProjMatrix * aCoord;\n"
             "gl_Position = vec4(p.xy, -(z * uTexParam.z + uTexParam.w) / z, 1.0);\n"
         "}\n"
 
@@ -435,21 +477,38 @@ const char* sh_background_mask =
 
 
 #ifdef _DEBUG
+
+#define MAX_DEBUG_VERTICES  1024
+#define MAX_DEBUG_INDICES   MAX_DEBUG_VERTICES * 3
+
+struct DebugVertex
+{
+    vec3s coord;
+    uint32 color;
+};
+
+Index gDebugIndices[MAX_DEBUG_INDICES];
+DebugVertex gDebugVertices[MAX_DEBUG_VERTICES];
+int32 gDebugIndicesCount;
+int32 gDebugVerticesCount;
+GLenum gDebugTopology;
+GLuint gDebugVAO;
+GLuint gDebugVBO[2];
+
 Shader shaderDebug;
 
 const char* sh_debug =
     "varying vec4 vColor;\n"
 
     "#ifdef VERTEX\n"
-        "uniform mat4 uProjMatrix;\n"
-        "uniform mat4 uViewMatrix;\n"
+        "uniform mat4 uViewProjMatrix;\n"
 
-        "attribute vec4 aCoord;\n"
+        "attribute vec3 aCoord;\n"
         "attribute vec4 aColor;\n"
 
         "void main() {\n"
             "vColor = aColor;\n"
-            "gl_Position = uProjMatrix * (uViewMatrix * aCoord);\n"
+            "gl_Position = uViewProjMatrix * vec4(aCoord.xyz, 1.0);\n"
         "}\n"
 
     "#else\n"
@@ -513,9 +572,12 @@ void compileShader(Shader* shader, const char* text)
     shader->bind();
     glUniform1iv(glGetUniformLocation(shader->id, "sDiffuse"), 1, &i);
 
-    shader->uid[uProjMatrix] = glGetUniformLocation(shader->id, "uProjMatrix");
-    shader->uid[uViewMatrix] = glGetUniformLocation(shader->id, "uViewMatrix");
+    shader->uid[uViewProjMatrix] = glGetUniformLocation(shader->id, "uViewProjMatrix");
+    shader->uid[uModelMatrix] = glGetUniformLocation(shader->id, "uModelMatrix");
     shader->uid[uTexParam] = glGetUniformLocation(shader->id, "uTexParam");
+    shader->uid[uAmbient] = glGetUniformLocation(shader->id, "uAmbient");
+    shader->uid[uLightColor] = glGetUniformLocation(shader->id, "uLightColor");
+    shader->uid[uLightPos] = glGetUniformLocation(shader->id, "uLightPos");
 }
 
 
@@ -885,8 +947,6 @@ struct Tile
     uint8 v[4];
 };
 
-typedef uint16 Index;
-
 struct Vertex
 {
     vec4s coord;
@@ -1056,6 +1116,7 @@ void Model::load(Stream* stream)
             normPtr->x = stream->s16();
             normPtr->y = stream->s16();
             normPtr->z = stream->s16();
+            normPtr->pad = 0;
             stream->skip(2); // padding
         }
 
@@ -1156,7 +1217,7 @@ void Model::load(Stream* stream)
 
     Vertex* v = NULL;
     glVertexAttribPointer(aCoord, 3, GL_SHORT, GL_FALSE, sizeof(*v), &v->coord);
-    glVertexAttribPointer(aNormal, 3, GL_SHORT, GL_TRUE, sizeof(*v), &v->normal);
+    glVertexAttribPointer(aNormal, 3, GL_SHORT, GL_FALSE, sizeof(*v), &v->normal);
     glVertexAttribPointer(aTexCoord, 4, GL_UNSIGNED_BYTE, GL_FALSE, sizeof(*v), &v->u);
 
     glBindVertexArray(0);
@@ -1196,39 +1257,39 @@ void Model::render(const vec3i& pos, int32 angle, uint16 frameIndex, const Textu
     Texture* pTexture = (Texture*)texture;
     Shader* pShader = &shaderModel;
 
-    mat4 m = gViewMatrix;
-
-    gViewMatrix.translate(pos.x, pos.y, pos.z);
-    gViewMatrix.rotateY(-angle * PI / 32768.0f);
+    gModelMatrix.identity();
+    gModelMatrix.translate(pos.x, pos.y, pos.z);
+    gModelMatrix.rotateY(-angle * PI / 32768.0f);
 
     vec3s framePos = animSkeleton->frames[frameIndex].pos;
-    gViewMatrix.translate(framePos.x, framePos.y + 1800, framePos.z);
+    gModelMatrix.translate(framePos.x, framePos.y - FLOOR_HEIGHT, framePos.z);
 
     glBindTexture(GL_TEXTURE_2D, *((GLuint*)pTexture->res));
-    float texParam[4] = { 1.0f / pTexture->width, 1.0f / pTexture->height, 1.0f / pTexture->count, 0.0f };
+    vec4 texParam = { 1.0f / pTexture->width, 1.0f / pTexture->height, 1.0f / pTexture->count, 0.0f };
 
     pShader->bind();
-    pShader->setMatrix(uProjMatrix, gProjMatrix);
-    pShader->setVector(uTexParam, texParam);
+    pShader->setMatrix(uViewProjMatrix, &gViewProjMatrix);
+    pShader->setVector(uTexParam, &texParam, 1);
+    pShader->setVector(uAmbient, &gAmbient, 1);
+    pShader->setVector(uLightColor, gLightColor, MAX_LIGHTS);
+    pShader->setVector(uLightPos, gLightPos, MAX_LIGHTS);
 
     renderMesh(0, frameIndex, skeleton, animSkeleton);
-
-    gViewMatrix = m;
 }
 
 void Model::renderMesh(uint32 meshIndex, uint32 frameIndex, const Skeleton* skeleton, const Skeleton* animSkeleton)
 {
     const Skeleton::Offset& offset = skeleton->offsets[meshIndex];
-    gViewMatrix.translate(offset.x, offset.y, offset.z);
+    gModelMatrix.translate(offset.x, offset.y, offset.z);
 
     int32 rx, ry, rz;
     animSkeleton->getAngles(frameIndex, meshIndex, rx, ry, rz);
 
-    gViewMatrix.rotateX(rx * (DEG2RAD * 360.0f / 4096.0f));
-    gViewMatrix.rotateY(ry * (DEG2RAD * 360.0f / 4096.0f));
-    gViewMatrix.rotateZ(rz * (DEG2RAD * 360.0f / 4096.0f));
+    gModelMatrix.rotateX(rx * (DEG2RAD * 360.0f / 4096.0f));
+    gModelMatrix.rotateY(ry * (DEG2RAD * 360.0f / 4096.0f));
+    gModelMatrix.rotateZ(rz * (DEG2RAD * 360.0f / 4096.0f));
 
-    shaderModel.setMatrix(uViewMatrix, gViewMatrix);
+    shaderModel.setMatrix(uModelMatrix, &gModelMatrix);
 
     ASSERT(meshIndex < rangesCount);
     MeshRange* range = ranges + meshIndex;
@@ -1392,6 +1453,23 @@ void renderInit()
 
 #ifdef _DEBUG
     compileShader(&shaderDebug, sh_debug);
+
+    glGenVertexArrays(1, &gDebugVAO);
+    glGenBuffers(2, gDebugVBO);
+    glBindVertexArray(gDebugVAO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gDebugVBO[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, gDebugVBO[1]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Index) * MAX_DEBUG_INDICES, NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(DebugVertex) * MAX_DEBUG_VERTICES, NULL, GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(aCoord);
+    glEnableVertexAttribArray(aColor);
+
+    DebugVertex* dv = NULL;
+    glVertexAttribPointer(aCoord, 3, GL_SHORT, GL_FALSE, sizeof(*dv), &dv->coord);
+    glVertexAttribPointer(aColor, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(*dv), &dv->color);
+
+    glBindVertexArray(0);
 #endif
 
     glClearColor(0.2f + dbg_clear, 0.2f, 0.2f, 1.0f);
@@ -1469,20 +1547,11 @@ void renderClear()
 
 void renderSetCamera(const vec3i& pos, const vec3i& target, int32 persp)
 {
-    gProjMatrix.perspective(120.0f / persp, (float)gWidth / (float)gHeight, PROJ_Z_NEAR, PROJ_Z_FAR);
-
     vec3 P, R, U, D;
     D.x = (float)(pos.x - target.x);
     D.y = (float)(pos.y - target.y);
     D.z = (float)(pos.z - target.z);
-
-    float dist = sqrtf(D.x * D.x + D.y * D.y + D.z * D.z);
-    ASSERT(dist > 0.00001);
-    dist = 1.0f / dist;
-
-    D.x *= dist;
-    D.y *= dist;
-    D.z *= dist;
+    normalize(D);
 
     U.x = 0.0f;
     U.y = 1.0f;
@@ -1493,24 +1562,53 @@ void renderSetCamera(const vec3i& pos, const vec3i& target, int32 persp)
     P.z = (float)pos.z;
 
     R = cross(D, U);
-    U = cross(D, R);
+    normalize(R);
 
-    gViewMatrix.e00 = R.x;
-    gViewMatrix.e01 = R.y;
-    gViewMatrix.e02 = R.z;
-    gViewMatrix.e03 = -dot(P, R);
-    gViewMatrix.e10 = U.x;
-    gViewMatrix.e11 = U.y;
-    gViewMatrix.e12 = U.z;
-    gViewMatrix.e13 = -dot(P, U);
-    gViewMatrix.e20 = D.x;
-    gViewMatrix.e21 = D.y;
-    gViewMatrix.e22 = D.z;
-    gViewMatrix.e23 = -dot(P, D);
-    gViewMatrix.e30 = 0.0f;
-    gViewMatrix.e31 = 0.0f;
-    gViewMatrix.e32 = 0.0f;
-    gViewMatrix.e33 = 1.0f;
+    U = cross(D, R);
+    normalize(U);
+
+    mat4 mView, mProj;
+    mView.e00 = R.x;
+    mView.e01 = R.y;
+    mView.e02 = R.z;
+    mView.e03 = -dot(P, R);
+    mView.e10 = U.x;
+    mView.e11 = U.y;
+    mView.e12 = U.z;
+    mView.e13 = -dot(P, U);
+    mView.e20 = D.x;
+    mView.e21 = D.y;
+    mView.e22 = D.z;
+    mView.e23 = -dot(P, D);
+    mView.e30 = 0.0f;
+    mView.e31 = 0.0f;
+    mView.e32 = 0.0f;
+    mView.e33 = 1.0f;
+
+    mProj.perspective(160.0f / persp, (float)gWidth / (float)gHeight, PROJ_Z_NEAR, PROJ_Z_FAR);
+
+    gViewProjMatrix = mProj * mView;
+}
+
+void renderSetAmbient(uint8 r, uint8 g, uint8 b)
+{
+    gAmbient.x = r / 255.0f;
+    gAmbient.y = g / 255.0f;
+    gAmbient.z = b / 255.0f;
+    gAmbient.w = 1.0f;
+}
+
+void renderSetLight(int32 index, const vec3s& pos, uint8 r, uint8 g, uint8 b, uint16 intensity)
+{
+    gLightColor[index].x = r / 255.0f;
+    gLightColor[index].y = g / 255.0f;
+    gLightColor[index].z = b / 255.0f;
+    gLightColor[index].w = 1.0f;
+
+    gLightPos[index].x = (float)pos.x;
+    gLightPos[index].y = (float)pos.y;
+    gLightPos[index].z = (float)pos.z;
+    gLightPos[index].w = 1.0f / intensity;
 }
 
 int32 uiAddQuad(VertexUI* vertices, const vec2s& src, const vec2s& dst, const vec2s& size, int32 z)
@@ -1583,15 +1681,16 @@ void renderBackground(const Texture* texture, const Texture* masks, const MaskCh
     glBindVertexArray(uiVAO);
 
     mat4 mProj;
-    mProj.ortho(0, 320, 240, 0, 0, 1);
+    float h = int(320 * (float)gHeight / (float)gWidth * 0.5f);
+    mProj.ortho(0, 320, 120 + h, 120 - h, 0, 1);
 
     { // draw background
         Shader* pShader = &shaderBackground;
         pShader->bind();
         texture->bind();
-        float texParam[4] = { 1.0f / texture->width, 1.0f / texture->height, 0.0f, 0.0f };
-        pShader->setVector(uTexParam, texParam);
-        pShader->setMatrix(uProjMatrix, mProj);
+        vec4 texParam = { 1.0f / texture->width, 1.0f / texture->height, 0.0f, 0.0f };
+        pShader->setMatrix(uViewProjMatrix, &mProj);
+        pShader->setVector(uTexParam, &texParam, 1);
 
         glDisable(GL_DEPTH_TEST);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
@@ -1604,127 +1703,88 @@ void renderBackground(const Texture* texture, const Texture* masks, const MaskCh
         Shader* pShader = &shaderBackgroundMask;
         pShader->bind();
         masks->bind();
-        float texParam[4] = { 1.0f / masks->width, 1.0f / masks->height, PROJ_Z_CLIP, PROJ_W_CLIP };
-        pShader->setVector(uTexParam, texParam);
-        pShader->setMatrix(uProjMatrix, mProj);
+        vec4 texParam = { 1.0f / masks->width, 1.0f / masks->height, PROJ_Z_CLIP, PROJ_W_CLIP };
+        pShader->setMatrix(uViewProjMatrix, &mProj);
+        pShader->setVector(uTexParam, &texParam, 1);
 
         glDrawElements(GL_TRIANGLES, (vCount/ 4 - 1) * 6, GL_UNSIGNED_SHORT, (GLvoid*)(sizeof(Index) * 6)); // offset from background quad
     }
 }
 
 #ifdef _DEBUG
-void renderDebugBegin()
+void renderDebugFlush()
 {
-    gViewMatrix.identity();
-    gViewMatrix.rotateX(-PI * 0.5f);
-    gProjMatrix.identity();
-    gProjMatrix.ortho(-0x8000, 0x8000, -0x8000, 0x8000, -0x8000, 0x8000);
+    if (!gDebugIndicesCount)
+        return;
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gDebugVBO[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, gDebugVBO[1]);
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, sizeof(Index) * gDebugIndicesCount, gDebugIndices);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(DebugVertex) * gDebugVerticesCount, gDebugVertices);
+    glDrawElements(gDebugTopology, gDebugIndicesCount, GL_UNSIGNED_SHORT, NULL);
+
+    gDebugIndicesCount = 0;
+    gDebugVerticesCount = 0;
 }
 
-void renderDebugPrimitive(const VertexUI* vertices, int32 vCount, int32 iCount)
+void renderDebugBegin(bool planar)
 {
+    Shader* pShader = &shaderDebug;
+    pShader->bind();
+
+    if (planar)
+    {
+        mat4 mView, mProj, mViewProj;
+        mView.identity();
+        mView.rotateX(-PI * 0.5f);
+        mProj.identity();
+        mProj.ortho(-0x8000, 0x8000, -0x8000, 0x8000, -0x8000, 0x8000);
+        mViewProj = mProj * mView;
+        pShader->setMatrix(uViewProjMatrix, &mViewProj);
+    }
+    else
+    {
+        pShader->setMatrix(uViewProjMatrix, &gViewProjMatrix);
+    }
+
     // color = AABBGGRR
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_DEPTH_TEST);
-    //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glBindVertexArray(gDebugVAO);
+}
 
-    Shader* pShader = &shaderDebug;
+void renderDebugEnd()
+{
+    renderDebugFlush();
 
-    pShader->bind();
-    pShader->setMatrix(uProjMatrix, gProjMatrix);
-    pShader->setMatrix(uViewMatrix, gViewMatrix);
-
-    glBindBuffer(GL_ARRAY_BUFFER, uiVBO[1]);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(VertexUI) * 4, sizeof(VertexUI) * vCount, vertices); // put 4 vertices after BG
-
-    glBindVertexArray(uiVAO);
-
-    glDrawElements(GL_TRIANGLES, iCount, GL_UNSIGNED_SHORT, (GLvoid*)(sizeof(Index) * 6));
-
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
 }
 
-void renderDebugRectangle(const vec3s* q, uint32 color)
+void renderDebugLines(const Index* indices, int32 iCount, const vec3s* vertices, int32 vCount, uint32 color)
 {
-    const VertexUI vertices[] = {
-        { { q[0].x, q[0].y, q[0].z, 1 }, { 0, 0 }, color },
-        { { q[1].x, q[1].y, q[1].z, 1 }, { 0, 0 }, color },
-        { { q[2].x, q[2].y, q[2].z, 1 }, { 0, 0 }, color },
-        { { q[3].x, q[3].y, q[3].z, 1 }, { 0, 0 }, color }
-    };
+    if ((gDebugIndicesCount + iCount > MAX_DEBUG_INDICES) || (gDebugVerticesCount + vCount > MAX_DEBUG_VERTICES) || (gDebugTopology != GL_LINES))
+    {
+        renderDebugFlush();
+    }
 
-    renderDebugPrimitive(vertices, 4, 6);
+    Index* idx = gDebugIndices + gDebugIndicesCount;
+    for (int32 i = 0; i < iCount; i++, idx++)
+    {
+        *idx = indices[i] + gDebugVerticesCount;
+    }
+
+    DebugVertex* vert = gDebugVertices + gDebugVerticesCount;
+    for (int32 i = 0; i < vCount; i++, vert++)
+    {
+        vert->coord = vertices[i];
+        vert->color = color;
+    }
+
+    gDebugIndicesCount += iCount;
+    gDebugVerticesCount += vCount;
+    gDebugTopology = GL_LINES;
 }
-
-void renderDebugTriangle(const vec3s* q, uint32 color)
-{
-    const VertexUI vertices[] = {
-        { { q[0].x, q[0].y, q[0].z, 1 }, { 0, 0 }, color },
-        { { q[1].x, q[1].y, q[1].z, 1 }, { 0, 0 }, color },
-        { { q[2].x, q[2].y, q[2].z, 1 }, { 0, 0 }, color },
-    };
-
-    renderDebugPrimitive(vertices, 3, 3);
-}
-
-void renderDebugRounded(const vec3s& pos, int16 R, int16 hx, int16 hz, uint32 color)
-{
-    int16 r = int16(R * 0.7);
-
-    const VertexUI vertices[] = {
-    // center
-        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-    // top
-        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
-    // bottom
-        { { pos.x - hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-    // left
-        { { pos.x - hx - R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx - R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-    // right
-        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx + R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx + R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-    // left top
-        { { pos.x - hx - R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
-        { { pos.x - hx - r, pos.y, pos.z - hz - r, 1 }, { 0, 0 }, color },
-    // right top
-        { { pos.x + hx, pos.y, pos.z - hz - R, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx + R, pos.y, pos.z - hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx + r, pos.y, pos.z - hz - r, 1 }, { 0, 0 }, color },
-    // left bottom
-        { { pos.x - hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
-        { { pos.x - hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx - R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x - hx - r, pos.y, pos.z + hz + r, 1 }, { 0, 0 }, color },
-    // right bottom
-        { { pos.x + hx + R, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z + hz, 1 }, { 0, 0 }, color },
-        { { pos.x + hx, pos.y, pos.z + hz + R, 1 }, { 0, 0 }, color },
-        { { pos.x + hx + r, pos.y, pos.z + hz + r, 1 }, { 0, 0 }, color },
-    };
-
-    const int32 count = sizeof(vertices) / (4 * sizeof(vertices[0]));
-
-    renderDebugPrimitive(vertices, 4 * count, 6 * count);
-}
-
 #endif

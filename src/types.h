@@ -13,6 +13,8 @@ typedef unsigned short int  uint16;
 typedef int                 int32;
 typedef unsigned int        uint32;
 
+typedef uint16 Index;
+
 struct vec2s
 {
     int16 x, y;
@@ -46,6 +48,33 @@ struct MaskChunk
     uint16 depth;
 };
 
+enum ShapeType
+{
+    SHAPE_RECT,
+    SHAPE_TRI_1,
+    SHAPE_TRI_2,
+    SHAPE_TRI_3,
+    SHAPE_TRI_4,
+    SHAPE_RHOMBUS,
+    SHAPE_CIRCLE,
+    SHAPE_OBROUND_X,
+    SHAPE_OBROUND_Z,
+    SHAPE_CLIMB_UP,
+    SHAPE_CLIMB_DOWN,
+    SHAPE_SLOPE,
+    SHAPE_STAIRS,
+    SHAPE_CURVE,
+    SHAPE_MAX
+};
+
+struct Shape
+{
+    int16 x;
+    int16 z;
+    uint16 sx;
+    uint16 sz;
+};
+
 #define COUNT(arr)      int32(sizeof(arr) / sizeof(arr[0]))
 #define BITS_MASK(n)    ((1 << (n)) - 1)
 
@@ -61,5 +90,8 @@ struct MaskChunk
     #define LOG(...)
     #define ASSERT(x)
 #endif
+
+#define FLOOR_HEIGHT    (-1800)
+#define FLOOR_STEP      (-200)
 
 #endif

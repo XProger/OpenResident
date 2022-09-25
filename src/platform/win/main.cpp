@@ -159,7 +159,7 @@ void inputReset()
     for (index = 0; index < INPUT_JOY_COUNT; index++)
     {
         if (!joyDevice[index].ready)
-            return;
+            break;
 
         XINPUT_VIBRATION vibration;
         vibration.wLeftMotorSpeed = 0;

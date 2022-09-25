@@ -69,7 +69,7 @@ struct Enemy
         angle = -8192;
         floor = 0;
 
-        animId = rand() & 7;
+        animId = model.animation.clipsCount ? (rand() % model.animation.clipsCount) : 0;
 
         collision = NULL;
     }
@@ -124,10 +124,13 @@ struct Enemy
 
         pos.y += speed.y;
 
-        collision->shape.x = pos.x - (ENEMY_RADIUS >> 1);
-        collision->shape.z = pos.z - (ENEMY_RADIUS >> 1);
-        collision->shape.sx = ENEMY_RADIUS;
-        collision->shape.sz = ENEMY_RADIUS;
+        collision->shape.x = pos.x - ENEMY_RADIUS;
+        collision->shape.z = pos.z - ENEMY_RADIUS;
+        collision->shape.sx = ENEMY_RADIUS << 1;
+        collision->shape.sz = ENEMY_RADIUS << 1;
+        collision->flags = SHAPE_CIRCLE | (COL_FLAG_PLAYER | COL_FLAG_ENEMY);
+        collision->floor = 1 << floor;
+        collision->type = 0;
     }
 
     void render()

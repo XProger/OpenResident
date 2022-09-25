@@ -18,18 +18,28 @@
     #define DEBUG_DOORS
 #endif
 
+#define MAX_SAMPLES             48
 #define MAX_COLLISIONS          64
 #define MAX_CAMERAS             16
 #define MAX_CAMERA_SWITCHES     64
 #define MAX_FLOORS              16
+#define MAX_BLOCKS              16
 #define MAX_ENEMIES             34
-#define MAX_DOORS               8
+#define MAX_DOORS               32
 #define MAX_MASK_CHUNKS         1024
-#define MAX_MASKS               8
+#define MAX_MASKS               16
 
 #define DOOR_RADIUS             600
 
 void scriptRun(Stream* stream);
+
+struct SampleInfo
+{
+    uint8 id;
+    uint8 pan;
+    uint8 tone;
+    uint8 solo;
+};
 
 struct Camera
 {
@@ -74,11 +84,40 @@ struct CameraSwitch
     }
 };
 
+struct LightColor
+{
+    uint8 r, g, b;
+};
+
+struct CameraLights
+{
+    uint8 unknown0; // TODO
+    uint8 types[MAX_LIGHTS];
+    LightColor colors[MAX_LIGHTS];
+    LightColor ambient;
+    vec3s pos[MAX_LIGHTS];
+    uint16 intensity[MAX_LIGHTS];
+};
+
+struct ModelInfo
+{
+    uint32 textureOffset;
+    uint32 modelOffset;
+};
+
 struct Floor
 {
     Shape shape;
     uint16 soundIdx;
     uint16 y;
+};
+
+struct Block
+{
+    int16 minX, minZ;
+    int16 maxX, maxZ;
+    uint16 unknown0;    // TODO
+    uint16 unknown1;    // TODO
 };
 
 struct Door
@@ -114,11 +153,15 @@ struct Room
 
     int32 collisionsCount;
     int32 floorsCount;
+    int32 blocksCount;
 
+    SampleInfo samplesInfo[MAX_SAMPLES];
     Collision collisions[MAX_COLLISIONS + 1 + MAX_ENEMIES]; // + player + enemies
     Camera cameras[MAX_CAMERAS];
     CameraSwitch cameraSwitches[MAX_CAMERA_SWITCHES];
+    CameraLights cameraLights[MAX_CAMERAS];
     Floor floors[MAX_FLOORS];
+    Block blocks[MAX_BLOCKS];
     MaskChunk maskChunks[MAX_MASK_CHUNKS];
 
     Texture background;
@@ -179,7 +222,6 @@ struct Room
         for (int32 i = collisionsCount; i < collisionsCount + 1 + MAX_ENEMIES; i++)
         {
             Collision* collision = collisions + i;
-            collision->flags = SHAPE_CIRCLE | COL_FLAG_ENABLE;
             collision->shape.x =
             collision->shape.z =
             collision->shape.sx =
@@ -228,29 +270,29 @@ struct Room
 
         struct Offsets
         {
-            uint32 soundTable;
-            uint32 roomVH;
-            uint32 roomVB;
-            uint32 modelsVH;
-            uint32 modelsVB;
-            uint32 unknown0;
+            uint32 samplesInfo;
+            uint32 samplesVH;
+            uint32 samplesVB;
+            uint32 unused0;
+            uint32 unused1;
+            uint32 objEnd;
             uint32 collision;
             uint32 cameras;
             uint32 cameraSwitches;
-            uint32 lights;
-            uint32 items;
+            uint32 cameraLights;
+            uint32 modelsInfo;
             uint32 floors;
             uint32 blocks;
             uint32 text1;
             uint32 text2;
             uint32 unknown1;
             uint32 scriptInit;
-            uint32 scriptExec;
+            uint32 scriptMain;
             uint32 spriteAnims;
-            uint32 spriteAnimOffsets;
-            uint32 sprites;
-            uint32 textures;
-            uint32 unknown2;
+            uint32 spriteAnimsEnd;
+            uint32 spriteTex;
+            uint32 spriteTexEnd;
+            uint32 roomObj;
         } offset;
 
         for (int32 i = 0; i < sizeof(header); i++)
@@ -264,6 +306,23 @@ struct Room
         }
 
         ASSERT(header.cameras <= MAX_CAMERAS);
+        ASSERT(offset.samplesVH > offset.samplesInfo);
+        ASSERT(offset.unused0 == 0);
+        ASSERT(offset.unused1 == 0);
+
+        { // samples info
+            stream.setPos(offset.samplesInfo);
+            ASSERT((offset.samplesVH - offset.samplesInfo) / sizeof(SampleInfo) == MAX_SAMPLES);
+
+            for (int32 i = 0; i < MAX_SAMPLES; i++)
+            {
+                SampleInfo* info = samplesInfo + i;
+                info->id = stream.u8();
+                info->pan = stream.u8();
+                info->tone = stream.u8();
+                info->solo = stream.u8();
+            }
+        }
 
         { // collisions
             stream.setPos(offset.collision);
@@ -376,55 +435,109 @@ struct Room
             }
         }
 
-        // camera switches
-        stream.setPos(offset.cameraSwitches);
-        int32 cameraSwitchesCount = 0;
-        while (1)
-        {
-            ASSERT(cameraSwitchesCount < MAX_CAMERA_SWITCHES);
-            CameraSwitch* cameraSwitch = cameraSwitches + cameraSwitchesCount++;
+        { // camera switches
+            stream.setPos(offset.cameraSwitches);
+            int32 cameraSwitchesCount = 0;
+            while (1)
+            {
+                ASSERT(cameraSwitchesCount < MAX_CAMERA_SWITCHES);
+                CameraSwitch* cameraSwitch = cameraSwitches + cameraSwitchesCount++;
 
-            uint8 b0 = stream.u8();
-            uint8 b1 = stream.u8();
-            uint8 b2 = stream.u8();
-            uint8 b3 = stream.u8();
+                uint8 b0 = stream.u8();
+                uint8 b1 = stream.u8();
+                uint8 b2 = stream.u8();
+                uint8 b3 = stream.u8();
 
-            cameraSwitch->flags = b0;
-            cameraSwitch->floor = b1;
-            cameraSwitch->from = b2;
-            cameraSwitch->to = b3;
+                cameraSwitch->flags = b0;
+                cameraSwitch->floor = b1;
+                cameraSwitch->from = b2;
+                cameraSwitch->to = b3;
 
-            if ((b0 & b1 & b2 & b3) == 0xFF)
-                break;
+                if ((b0 & b1 & b2 & b3) == 0xFF)
+                    break;
 
-            cameraSwitch->a.x = stream.s16();
-            cameraSwitch->a.y = stream.s16();
-            cameraSwitch->b.x = stream.s16();
-            cameraSwitch->b.y = stream.s16();
-            cameraSwitch->c.x = stream.s16();
-            cameraSwitch->c.y = stream.s16();
-            cameraSwitch->d.x = stream.s16();
-            cameraSwitch->d.y = stream.s16();
+                cameraSwitch->a.x = stream.s16();
+                cameraSwitch->a.y = stream.s16();
+                cameraSwitch->b.x = stream.s16();
+                cameraSwitch->b.y = stream.s16();
+                cameraSwitch->c.x = stream.s16();
+                cameraSwitch->c.y = stream.s16();
+                cameraSwitch->d.x = stream.s16();
+                cameraSwitch->d.y = stream.s16();
+            }
         }
 
-        // floors
-        stream.setPos(offset.floors);
-        floorsCount = stream.u16();
-        ASSERT(floorsCount <= MAX_FLOORS);
-        for (int32 i = 0; i < floorsCount; i++)
-        {
-            Floor* floor = floors + i;
-            floor->shape.x = stream.s16();
-            floor->shape.z = stream.s16();
-            floor->shape.sx = stream.u16();
-            floor->shape.sz = stream.u16();
-            floor->soundIdx = stream.u16();
-            floor->y = stream.u16();
+        { // camera lights
+            stream.setPos(offset.cameraLights);
+            for (int32 i = 0; i < header.cameras; i++)
+            {
+                CameraLights* lights = cameraLights + i;
+                lights->unknown0 = stream.u8();
+                for (int32 j = 0; j < MAX_LIGHTS; j++)
+                {
+                    lights->types[j] = stream.u8();
+                }
+                for (int32 j = 0; j < MAX_LIGHTS; j++)
+                {
+                    lights->colors[j].r = stream.u8();
+                    lights->colors[j].g = stream.u8();
+                    lights->colors[j].b = stream.u8();
+                }
+                lights->ambient.r = stream.u8();
+                lights->ambient.g = stream.u8();
+                lights->ambient.b = stream.u8();
+                for (int32 j = 0; j < MAX_LIGHTS; j++)
+                {
+                    lights->pos[j].x = stream.s16();
+                    lights->pos[j].y = stream.s16();
+                    lights->pos[j].z = stream.s16();
+                }
+                for (int32 j = 0; j < MAX_LIGHTS; j++)
+                {
+                    lights->intensity[j] = stream.u16();
+                }
+            }
         }
 
-        stream.setPos(offset.scriptInit);
-        ASSERT(offset.scriptInit != 0xFFFFFFFF);
-        scriptRun(&stream);
+        { // floors
+            stream.setPos(offset.floors);
+            floorsCount = stream.u16();
+            ASSERT(floorsCount <= MAX_FLOORS);
+            for (int32 i = 0; i < floorsCount; i++)
+            {
+                Floor* floor = floors + i;
+                floor->shape.x = stream.s16();
+                floor->shape.z = stream.s16();
+                floor->shape.sx = stream.u16();
+                floor->shape.sz = stream.u16();
+                floor->soundIdx = stream.u16();
+                floor->y = stream.u16();
+            }
+        }
+
+        { // blocks
+            stream.setPos(offset.blocks);
+            blocksCount = stream.u32();
+            ASSERT(blocksCount <= MAX_BLOCKS);
+            for (int32 i = 1; i < blocksCount; i++)
+            {
+                Block* block = blocks + i;
+                block->minX = stream.s16();
+                block->minZ = stream.s16();
+                block->maxX = stream.s16();
+                block->maxZ = stream.s16();
+                block->unknown0 = stream.u16();
+                block->unknown1 = stream.u16();
+                ASSERT(block->minX < block->maxX);
+                ASSERT(block->minZ < block->maxZ);
+            }
+        }
+
+        { // init script
+            stream.setPos(offset.scriptInit);
+            ASSERT(offset.scriptInit != 0xFFFFFFFF);
+            scriptRun(&stream);
+        }
 
         return true;
     }
@@ -697,6 +810,15 @@ struct Room
         ASSERT(cameraSwitchStart->to == 0);
 
         loadBG();
+
+        // lighting setup
+        const CameraLights* lights = cameraLights + cameraIdx;
+        renderSetAmbient(lights->ambient.r, lights->ambient.g, lights->ambient.b);
+        for (int32 i = 0; i < MAX_LIGHTS; i++)
+        {
+            const LightColor* color = lights->colors + i;
+            renderSetLight(i, lights->pos[i], color->r, color->g, color->b, lights->intensity[i]);
+        }
     }
 
     void swapCameraSwitch(uint8 from, uint8 to)
@@ -716,7 +838,7 @@ struct Room
         }
     }
 
-    void updateCameraSwitch()
+    void checkCameraSwitch()
     {
         const CameraSwitch* cameraSwitch = cameraSwitchStart;
 
@@ -738,12 +860,18 @@ struct Room
         }
     }
 
-    void collide(int32 floor, int32 r, vec3i& pos)
+    bool isVisible(int32 x, int32 z, int32 floor)
+    {
+        // TODO check floor
+        return cameraSwitchStart->intersect(x, z);
+    }
+
+    void collide(int32 r, vec3i& pos, uint32 floorMask, uint32 flagsMask)
     {
         for (int32 i = 0; i < collisionsCount + 1 + MAX_ENEMIES; i++)
         {
             const Collision* collision = collisions + i;
-            if (collision->collide(floor, r, pos))
+            if (collision->collide(r, pos, floorMask, flagsMask))
             {
                 switch (collision->getShape())
                 {
@@ -762,6 +890,7 @@ struct Room
     void update()
     {
         player.stairs = NULL;
+        player.update();
 
         for (int32 i = 0; i < MAX_ENEMIES; i++)
         {
@@ -770,20 +899,17 @@ struct Room
             {
                 enemy->setTarget(player.pos);
                 enemy->update();
-                enemy->collision->flags &= ~COL_FLAG_ENABLE;
-                collide(enemy->floor, ENEMY_RADIUS, enemy->pos);
-                enemy->collision->flags |= COL_FLAG_ENABLE;
+                enemy->collision->flags &= ~COL_FLAG_ENEMY;
+                collide(ENEMY_RADIUS, enemy->pos, 1 << enemy->floor, COL_FLAG_ENEMY);
+                enemy->collision->flags |= COL_FLAG_ENEMY;
             }
         }
 
-        player.update();
-        player.collision->flags &= ~COL_FLAG_ENABLE;
-        collide(player.floor, PLAYER_RADIUS_MAIN, player.pos);
-        player.collision->flags |= COL_FLAG_ENABLE;
+        collide(PLAYER_RADIUS_MAIN, player.pos, 1 << player.floor, COL_FLAG_PLAYER);
 
         player.updateStairs();
 
-        updateCameraSwitch();
+        checkCameraSwitch();
 
         if (gPad & IN_A)
         {
@@ -796,12 +922,7 @@ struct Room
             {
                 if (door->intersect(px, pz))
                 {
-                    player.pos.x = door->pos.x;
-                    player.pos.y = door->pos.y;
-                    player.pos.z = door->pos.z;
-                    player.angle = -door->angle << 4;
-                    player.floor = door->floor;
-
+                    player.reset(door->pos, door->angle, door->floor);
                     load(door->stageIdx + 1, door->roomIdx, door->cameraIdx);
                     break;
                 }
@@ -825,26 +946,35 @@ struct Room
             Enemy* enemy = enemies + i;
             if (enemy->active)
             {
-                enemy->render();
+                if (isVisible(enemy->pos.x, enemy->pos.z, enemy->floor))
+                {
+                    enemy->render();
+                }
             }
         }
 
         player.render();
 
-    #ifdef DEBUG_CAMERA_SWITCHES
-        debugDrawCameraSwitches(cameraSwitchStart, cameraIndex, player.floor);
-    #endif
+    #ifdef _DEBUG
+        renderDebugBegin(false);
 
-    #ifdef DEBUG_FLOORS
-        debugDrawFloors(floors, floorsCount);
-    #endif
+        #ifdef DEBUG_CAMERA_SWITCHES
+            debugDrawCameraSwitches(cameraSwitchStart, cameraIndex, player.floor);
+        #endif
 
-    #ifdef DEBUG_COLLISIONS
-        debugDrawCollisions(collisions, collisionsCount + 1 + MAX_ENEMIES, player.pos.y);
-    #endif
+        #ifdef DEBUG_FLOORS
+            debugDrawFloors(floors, floorsCount);
+        #endif
 
-    #ifdef DEBUG_DOORS
-        debugDrawDoors(doors, MAX_DOORS);
+        #ifdef DEBUG_COLLISIONS
+            debugDrawCollisions(collisions, collisionsCount + 1 + MAX_ENEMIES, player.pos.y, 1 << player.floor, COL_FLAG_PLAYER);
+        #endif
+
+        #ifdef DEBUG_DOORS
+            debugDrawDoors(doors, MAX_DOORS);
+        #endif
+
+        renderDebugEnd();
     #endif
     }
 };

@@ -15,9 +15,10 @@ void addSuffix(char* str, int32 value)
 extern int32 gFrameIndex;
 extern int32 gLastFrameIndex;
 
-#define x_sqrt(x) sqrt((uint32)x)
-
-#define x_clamp(x,a,b) ((x) < (a)) ? (a) : (((x) > (b)) ? (b) : (x))
+#define x_sqrt(x)       sqrt((uint32)x)
+#define x_min(a,b)      ((a) < (b) ? (a) : (b))
+#define x_max(a,b)      ((a) > (b) ? (a) : (b))
+#define x_clamp(x,a,b)  ((x) < (a)) ? (a) : (((x) > (b)) ? (b) : (x))
 
 #include "tables.h"
 #include "stream.h"

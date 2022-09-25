@@ -4,34 +4,12 @@
 #include "math.h"
 #include "common.h"
 
-enum ShapeType
-{
-    SHAPE_RECT,
-    SHAPE_TRI_1,
-    SHAPE_TRI_2,
-    SHAPE_TRI_3,
-    SHAPE_TRI_4,
-    SHAPE_RHOMBUS,
-    SHAPE_CIRCLE,
-    SHAPE_OBROUND_X,
-    SHAPE_OBROUND_Z,
-    SHAPE_CLIMB_UP,
-    SHAPE_CLIMB_DOWN,
-    SHAPE_SLOPE,
-    SHAPE_STAIRS,
-    SHAPE_CURVE,
-    SHAPE_MAX
-};
+#define COL_FLAG_ENEMY  (1 << 10)
+#define COL_FLAG_PLAYER (1 << 15)
 
-struct Shape
-{
-    int16 x;
-    int16 z;
-    uint16 sx;
-    uint16 sz;
-};
-
-#define COL_FLAG_ENABLE (1 << 15)
+#define GET_TYPE_FLOOR()      ((type >> 6) & 0x3F)
+#define GET_TYPE_HEIGHT()     (type >> 12)
+#define GET_TYPE_SLOPE()      ((type >> 4) & 3)
 
 struct Collision
 {
@@ -40,34 +18,37 @@ struct Collision
     uint16 type;
     uint32 floor;
 
-    inline int32 getShape() const
+    inline ShapeType getShape() const
     {
-        return (flags & 0x0F);
-    }
-
-    inline int32 getFloor() const
-    {
-        return (type >> 6) & 0x3F;
-    }
-
-    inline int32 getHeight() const
-    {
-        return (type >> 12);
-    }
-
-    inline int32 getSlope() const
-    {
-        return (type >> 4) & 3;
+        return ShapeType(flags & 0x0F);
     }
 
     inline int32 getGround() const
     {
-        return -200 * getHeight() - 1800 * getFloor();
+        if (!floor)
+            return 0;
+
+        uint32 mask = floor;
+        int32 y = 0;
+        while (!(mask & 1))
+        {
+            y += FLOOR_HEIGHT;
+            mask >>= 1;
+        }
+        return y;
     }
 
-    bool collide(int32 targetFloor, int32 r, vec3i& pos) const
+    inline int32 getHeight() const
     {
-        if (!(flags & COL_FLAG_ENABLE))
+        return (FLOOR_HEIGHT * GET_TYPE_FLOOR()) + (FLOOR_STEP * GET_TYPE_HEIGHT());
+    }
+
+    bool collide(int32 r, vec3i& pos, int32 floorsMask, uint32 flagsMask) const
+    {
+        if ((flags & flagsMask) == 0)
+            return false;
+
+        if ((floor & floorsMask) == 0)
             return false;
 
         int32 minX = shape.x;
@@ -82,41 +63,38 @@ struct Collision
         if (px + r < minX || px - r > maxX || pz + r < minZ || pz - r > maxZ)
             return false;
 
-        if (floor == 8)
-            return false;
-
         switch (getShape())
         {
             case SHAPE_RECT:
             {
-                return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                return rect(minX, minZ, maxX, maxZ, r, px, pz);
             }
 
             case SHAPE_TRI_1:
             {
                 if (px > maxX || pz > maxZ)
-                    return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                    return rect(minX, minZ, maxX, maxZ, r, px, pz);
                 return line(maxX, minZ, minX, maxZ, r, px, pz);
             }
 
             case SHAPE_TRI_2:
             {
                 if (px < minX || pz > maxZ)
-                    return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                    return rect(minX, minZ, maxX, maxZ, r, px, pz);
                 return line(maxX, maxZ, minX, minZ, r, px, pz);
             }
 
             case SHAPE_TRI_3:
             {
                 if (px > maxX || pz < minZ)
-                    return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                    return rect(minX, minZ, maxX, maxZ, r, px, pz);
                 return line(minX, minZ, maxX, maxZ, r, px, pz);
             }
 
             case SHAPE_TRI_4:
             {
                 if (px < minX || pz < minZ)
-                    return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                    return rect(minX, minZ, maxX, maxZ, r, px, pz);
                 return line(minX, maxZ, maxX, minZ, r, px, pz);
             }
 
@@ -156,7 +134,7 @@ struct Collision
                     return circle(cr, minX + cr, minZ + cr, r, px, pz);
                 if (px > maxX - cr)
                     return circle(cr, maxX - cr, minZ + cr, r, px, pz);
-                return rect(minX + cr, maxX - cr, minZ, maxZ, r, px, pz);
+                return rect(minX + cr, minZ, maxX - cr, maxZ, r, px, pz);
             }
 
             case SHAPE_OBROUND_Z:
@@ -166,13 +144,13 @@ struct Collision
                     return circle(cr, minX + cr, minZ + cr, r, px, pz);
                 if (pz > maxZ - cr)
                     return circle(cr, minX + cr, maxZ - cr, r, px, pz);
-                return rect(minX, maxX, minZ + cr, maxZ - cr, r, px, pz);
+                return rect(minX, minZ + cr, maxX, maxZ - cr, r, px, pz);
             }
 
             case SHAPE_CLIMB_UP:
             case SHAPE_CLIMB_DOWN:
             {
-                return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                return rect(minX, minZ, maxX, maxZ, r, px, pz);
             }
 
             case SHAPE_SLOPE:
@@ -181,7 +159,7 @@ struct Collision
 
             case SHAPE_STAIRS:
             {
-                return rect(minX, maxX, minZ, maxZ, r, px, pz);
+                return rect(minX, minZ, maxX, maxZ, r, px, pz);
             }
 
             case SHAPE_CURVE:
@@ -238,7 +216,7 @@ struct Collision
         return true;
     }
 
-    static bool rect(int32 minX, int32 maxX, int32 minZ, int32 maxZ, int32 r, int32& px, int32& pz)
+    static bool rect(int32 minX, int32 minZ, int32 maxX, int32 maxZ, int32 r, int32& px, int32& pz)
     {
         int32 closestX = x_clamp(px, minX, maxX);
         int32 closestZ = x_clamp(pz, minZ, maxZ);
