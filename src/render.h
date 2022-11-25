@@ -54,7 +54,6 @@ struct Animation
     int32 getFrameFlags(int32 curIndex) const;
 };
 
-
 #define MAX_CHILDS 15
 
 struct Skeleton
@@ -90,11 +89,23 @@ struct Skeleton
     void getAngles(int32 frameIndex, int32 jointIndex, int32& x, int32& y, int32& z) const;
 };
 
+struct ClipInfo
+{
+    uint16 count;
+    uint16 start;
+    const Animation* animation;
+    const Skeleton* skeleton;
+};
+
+#define MAX_MODEL_ANIMS 3
+
 struct Model
 {
-    Animation animation;
-    Skeleton skeleton;
+    Animation animation[MAX_MODEL_ANIMS];
+    Skeleton skeleton[MAX_MODEL_ANIMS];
     Texture texture;
+
+    int32 clipsCount;
 
     void* res;
     uint32 rangesCount;
@@ -102,6 +113,9 @@ struct Model
 
     void load(Stream* stream);
     void free();
+    void updateInfo();
+    ClipInfo getClipInfo(int32 clipIndex);
+
     void render(const vec3i& pos, int32 angle, uint16 frameIndex, const Texture* texture, const Skeleton* skeleton, const Skeleton* animSkeleton);
     void renderMesh(uint32 meshIndex, uint32 frameIndex, const Skeleton* skeleton, const Skeleton* animSkeleton);
 };

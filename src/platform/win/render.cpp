@@ -225,8 +225,6 @@ struct mat4
     }
 };
 
-float dbg_clear;
-
 mat4 gViewProjMatrix;
 mat4 gModelMatrix;
 
@@ -403,7 +401,7 @@ const char* sh_model =
                 "light += max(0.0, NdotL) * max(0.0, att) * uLightColor[i].xyz;\n"
             "}\n"
 
-            "vColor = vec4(light, 1.0);\n"
+            "vColor = vec4(light * 2.0, 1.0);\n"
             "gl_Position = uViewProjMatrix * c;\n"
         "}\n"
 
@@ -772,6 +770,7 @@ void Animation::load(Stream* stream)
 
     clipsCount = basePos >> 2;
 
+    ASSERT(clipsCount > 0);
     ASSERT(clipsCount <= MAX_ANIMATION_CLIPS);
 
     totalFrames = clips[0].count;
@@ -813,7 +812,7 @@ void Skeleton::load(Stream* stream, const Animation* anim)
     uint32 offsetLinks = stream->u16();
     uint32 offsetFrames = stream->u16();
 
-    if (offsetLinks == 0 && offsetFrames == 0)
+    if (offsetFrames <= offsetLinks)
         return;
 
     count = stream->u16();
@@ -823,6 +822,8 @@ void Skeleton::load(Stream* stream, const Animation* anim)
 
     if (offsetLinks > 0)
     {
+        offsetLinks += basePos;
+
         ASSERT(count <= MAX_RANGES);
 
         for (uint32 i = 0; i < count; i++)
@@ -832,7 +833,7 @@ void Skeleton::load(Stream* stream, const Animation* anim)
             offsets[i].z = stream->s16();
         }
 
-        stream->setPos(offsetLinks + basePos);
+        stream->setPos(offsetLinks);
         for (uint32 i = 0; i < count; i++)
         {
             links[i].count = stream->u16();
@@ -843,7 +844,7 @@ void Skeleton::load(Stream* stream, const Animation* anim)
 
         for (uint32 i = 0; i < count; i++)
         {
-            stream->setPos(offsetLinks + basePos + links[i].offset);
+            stream->setPos(offsetLinks + links[i].offset);
             for (uint32 j = 0; j < links[i].count; j++)
             {
                 links[i].childs[j] = stream->u8();
@@ -1009,31 +1010,26 @@ void Model::load(Stream* stream)
     ASSERT((numOffsets == 4) || (numOffsets == 8));
 
     stream->setPos(offset);
-    uint32 offsetAnimation0 = 0;
-    uint32 offsetSkeleton0 = 0;
-    uint32 offsetAnimation1 = 0;
-    uint32 offsetSkeleton1 = 0;
-    uint32 offsetAnimation2 = 0;
-    uint32 offsetSkeleton2 = 0;
+    uint32 offsetAnimation[MAX_MODEL_ANIMS] = {};
+    uint32 offsetSkeleton[MAX_MODEL_ANIMS] = {};
     uint32 offsetMesh = 0;
     uint32 offsetTexture = 0;
 
     if (numOffsets == 4)
     {
-        offsetAnimation0 = stream->u32();
-        offsetSkeleton0 = stream->u32();
+        offsetAnimation[0] = stream->u32();
+        offsetSkeleton[0] = stream->u32();
         offsetMesh = stream->u32();
         offsetTexture = stream->u32();
     }
     else if (numOffsets == 8)
     {
         stream->skip(4);
-        offsetAnimation0 = stream->u32();
-        offsetSkeleton0 = stream->u32();
-        offsetAnimation1 = stream->u32();
-        offsetSkeleton1 = stream->u32();
-        offsetAnimation2 = stream->u32();
-        offsetSkeleton2 = stream->u32();
+        for (int32 i = 0; i < MAX_MODEL_ANIMS; i++)
+        {
+            offsetAnimation[i] = stream->u32();
+            offsetSkeleton[i] = stream->u32();
+        }
         offsetMesh = stream->u32();
     }
     else
@@ -1041,11 +1037,19 @@ void Model::load(Stream* stream)
         ASSERT(0);
     }
 
-    stream->setPos(offsetAnimation0);
-    animation.load(stream);
+    for (int32 i = 0; i < MAX_MODEL_ANIMS; i++)
+    {
+        animation[i].clipsCount = 0;
 
-    stream->setPos(offsetSkeleton0);
-    skeleton.load(stream, &animation);
+        if (offsetAnimation[i] == 0)
+            continue;
+
+        stream->setPos(offsetAnimation[i]);
+        animation[i].load(stream);
+
+        stream->setPos(offsetSkeleton[i]);
+        skeleton[i].load(stream, animation + i);
+    }
 
     if (offsetTexture)
     {
@@ -1243,6 +1247,8 @@ void Model::load(Stream* stream)
     delete[] normals;
     delete[] coords;
     delete[] headers;
+
+    updateInfo();
 }
 
 void Model::free()
@@ -1250,6 +1256,39 @@ void Model::free()
     texture.free();
     glDeleteVertexArrays(1, &((MeshData*)res)->VAO);
     glDeleteBuffers(2, ((MeshData*)res)->VBO);
+}
+
+void Model::updateInfo()
+{
+    clipsCount = 0;
+    for (int32 i = 0; i < MAX_MODEL_ANIMS; i++)
+    {
+        clipsCount += animation[i].clipsCount;
+    }
+}
+
+ClipInfo Model::getClipInfo(int32 clipIndex)
+{
+    ClipInfo info;
+
+    for (int32 i = 0; i < MAX_MODEL_ANIMS; i++)
+    {
+        if (clipIndex < animation[i].clipsCount)
+        {
+            info.start = animation[i].clips[clipIndex].start;
+            info.count = animation[i].clips[clipIndex].count;
+            info.animation = animation + i;
+            info.skeleton = skeleton + i;
+            return info;
+        }
+        clipIndex -= animation[i].clipsCount;
+    }
+
+    info.start = 0;
+    info.count = 0;
+    info.animation = NULL;
+    info.skeleton = NULL;
+    return info;
 }
 
 void Model::render(const vec3i& pos, int32 angle, uint16 frameIndex, const Texture* texture, const Skeleton* skeleton, const Skeleton* animSkeleton)
@@ -1472,7 +1511,6 @@ void renderInit()
     glBindVertexArray(0);
 #endif
 
-    glClearColor(0.2f + dbg_clear, 0.2f, 0.2f, 1.0f);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
 

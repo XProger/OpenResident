@@ -71,6 +71,7 @@ enum StateID
 };
 
 extern int32 gPad;
+extern int32 gPadStickX;
 
 struct Player
 {
@@ -245,17 +246,17 @@ struct Player
 
         if (animId >= ANIM_WALK)
         {
-            clip = weapon.animation.clips + animId - ANIM_WALK;
+            clip = weapon.animation[0].clips + animId - ANIM_WALK;
 
-            frameIndex = weapon.animation.getFrameIndex(clip->start + (animFrame % clip->count));
-            frame = weapon.skeleton.frames + frameIndex;
+            frameIndex = weapon.animation[0].getFrameIndex(clip->start + (animFrame % clip->count));
+            frame = weapon.skeleton[0].frames + frameIndex;
         }
         else
         {
-            clip = model.animation.clips + animId;
+            clip = model.animation[0].clips + animId;
 
-            frameIndex = model.animation.getFrameIndex(clip->start + (animFrame % clip->count));
-            frame = model.skeleton.frames + frameIndex;
+            frameIndex = model.animation[0].getFrameIndex(clip->start + (animFrame % clip->count));
+            frame = model.skeleton[0].frames + frameIndex;
         }
 
         if (animFrame == 0)
@@ -324,11 +325,11 @@ struct Player
 
         if (gPad & IN_LEFT)
         {
-            angle += PLAYER_TURN_ANGLE;
+            angle += PLAYER_TURN_ANGLE * gPadStickX >> 8;
         }
         else
         {
-            angle -= PLAYER_TURN_ANGLE;
+            angle -= PLAYER_TURN_ANGLE * gPadStickX >> 8;
         }
 
         return true;
@@ -498,6 +499,8 @@ struct Player
 
                 break;
             }
+
+            default: ASSERT(0);
         }
     }
 
@@ -505,11 +508,11 @@ struct Player
     {
         if (animId < ANIM_WALK)
         {
-            model.render(pos, angle, frameIndex, &model.texture, &model.skeleton, &model.skeleton);
+            model.render(pos, angle, frameIndex, &model.texture, &model.skeleton[0], &model.skeleton[0]);
         }
         else
         {
-            model.render(pos, angle, frameIndex, &model.texture, &model.skeleton, &weapon.skeleton);
+            model.render(pos, angle, frameIndex, &model.texture, &model.skeleton[0], &weapon.skeleton[0]);
         }
     }
 };

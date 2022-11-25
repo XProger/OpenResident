@@ -69,7 +69,7 @@ struct Enemy
         angle = -8192;
         floor = 0;
 
-        animId = model.animation.clipsCount ? (rand() % model.animation.clipsCount) : 0;
+        animId = ENEMY_ANIM_WALK;
 
         collision = NULL;
     }
@@ -92,10 +92,10 @@ struct Enemy
     {
         angle += turn;
 
-        const Animation::Clip* clip = model.animation.clips + animId;
+        const ClipInfo clip = model.getClipInfo(animId);
+        frameIndex = clip.animation->getFrameIndex(clip.start + (animFrame % clip.count));
 
-        frameIndex = model.animation.getFrameIndex(clip->start + (animFrame % clip->count));
-        const Skeleton::Frame* frame = model.skeleton.frames + frameIndex;
+        const Skeleton::Frame* frame = clip.skeleton->frames + frameIndex;
 
         if (animFrame == 0)
         {
@@ -104,7 +104,7 @@ struct Enemy
 
         animFrame++;
 
-        animFrame %= clip->count;
+        animFrame %= clip.count;
 
         vec3i speed;
         speed.x = frame->offset.x - offset.x;
@@ -135,7 +135,7 @@ struct Enemy
 
     void render()
     {
-        model.render(pos, angle, frameIndex, &model.texture, &model.skeleton, &model.skeleton);
+        model.render(pos, angle, frameIndex, &model.texture, &model.skeleton[0], &model.skeleton[0]);
     }
 };
 

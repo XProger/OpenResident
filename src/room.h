@@ -11,13 +11,6 @@
 #include "mdec.h"
 #endif
 
-#ifdef _DEBUG
-    #define DEBUG_CAMERA_SWITCHES
-    //#define DEBUG_FLOORS
-    #define DEBUG_COLLISIONS
-    #define DEBUG_DOORS
-#endif
-
 #define MAX_SAMPLES             48
 #define MAX_COLLISIONS          64
 #define MAX_CAMERAS             16
@@ -163,6 +156,9 @@ struct Room
     Floor floors[MAX_FLOORS];
     Block blocks[MAX_BLOCKS];
     MaskChunk maskChunks[MAX_MASK_CHUNKS];
+
+    Animation extraAnimation;
+    Skeleton extraSkeleton;
 
     Texture background;
     Texture masks;
@@ -882,6 +878,7 @@ struct Room
                     case SHAPE_STAIRS:
                         player.stairs = collision;
                         break;
+                    default:;
                 }
             }
         }

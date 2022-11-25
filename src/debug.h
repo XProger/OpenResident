@@ -3,6 +3,11 @@
 
 #ifdef _DEBUG
 
+#define DEBUG_CAMERA_SWITCHES
+//#define DEBUG_FLOORS
+#define DEBUG_COLLISIONS
+//#define DEBUG_DOORS
+
 #include "room.h"
 
 static const Index gIndicesRectangle[] = {
