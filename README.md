@@ -12,4 +12,11 @@ Based on the research of great engineers who spent many years of their lives on 
 ## Screenshots
 ![image](https://user-images.githubusercontent.com/796763/192126092-b956fac0-e86a-4c5b-a9bc-91b586b2bfbc.png)
 
+## Build
+
+### Unix
+
+1. Extract `src/libs/extract_here.zip` content into `src/libs/`
+2. In `src/platform/nix` exec `build.sh`
+3. Copy `bin/OpenResident` in your game folder
 
